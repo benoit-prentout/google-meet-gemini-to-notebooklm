@@ -1,0 +1,122 @@
+/**
+ * Append Google Meet "Notes by Gemini" docs (in "Meet Recordings" folder)
+ * into a single Master Google Doc.
+ *
+ * Key hardening:
+ * - Uses Drive v3 export via UrlFetchApp (avoids DocumentApp.openById failures on Meet docs)
+ * - Avoids setHeading() (uses bold + font size instead; heading styling can error in some contexts)
+ * - Rhino-safe (no template literals, no chained calls across lines)
+ * - Logs failures and skips non-Docs
+ *
+ * BEFORE YOU RUN:
+ * 1) Set MASTER_DOC_ID to your Master Google Doc ID
+ * 2) Ensure you have a Drive folder named exactly: "Meet Recordings"
+ * 3) First manual Run will ask for authorization
+ */
+
+function appendMeetNotesToMaster() {
+  var MASTER_DOC_ID = 'MASTER_DOC_ID';
+  var SOURCE_FOLDER_NAME = 'Meet Recordings';
+
+  // Find source folder
+  var folders = DriveApp.getFoldersByName(SOURCE_FOLDER_NAME);
+  if (!folders.hasNext()) {
+    Logger.log('Source folder not found: ' + SOURCE_FOLDER_NAME);
+    return;
+  }
+  var meetFolder = folders.next();
+
+  // Open master doc (this should be a normal Google Doc you own/have edit rights to)
+  var masterDoc = DocumentApp.openById(MASTER_DOC_ID);
+  var body = masterDoc.getBody();
+
+  // Track processed files to avoid duplicates
+  var props = PropertiesService.getScriptProperties();
+  var processed = JSON.parse(props.getProperty('processedFiles') || '{}');
+
+  // Iterate ALL files in the folder (more robust than getFilesByType)
+  var files = meetFolder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    var fileId = file.getId();
+    var name = file.getName();
+    var mime = file.getMimeType();
+
+    if (processed[fileId]) {
+      continue;
+    }
+
+    Logger.log('Considering: ' + name + ' | ' + mime + ' | ' + fileId);
+
+    // Only process Google Docs
+    if (mime !== MimeType.GOOGLE_DOCS) {
+      Logger.log('Skipping (not a Google Doc): ' + name);
+      processed[fileId] = true; // mark so it doesn't retry forever on PDFs/videos/etc.
+      continue;
+    }
+
+    try {
+      // Export Meet Doc to plain text (avoids DocumentApp.openById on the Meet doc)
+      var text = exportGoogleDocAsText_(fileId);
+
+      // Append into master
+      body.appendPageBreak();
+
+      var titlePara = body.appendParagraph('Meeting: ' + name);
+      safeSetBold_(titlePara, true);
+      safeSetFontSize_(titlePara, 14);
+
+      var datePara = body.appendParagraph('Date added: ' + new Date().toLocaleString());
+      safeSetItalic_(datePara, true);
+
+      body.appendParagraph(''); // spacer line
+      body.appendParagraph(text);
+
+      processed[fileId] = true;
+      Logger.log('✅ Appended: ' + name);
+
+    } catch (e) {
+      Logger.log('❌ FAILED append/export: ' + name + ' | ' + fileId + ' | ' + e);
+      // leave unprocessed so it can retry later if transient
+    }
+  }
+
+  props.setProperty('processedFiles', JSON.stringify(processed));
+}
+
+/**
+ * Export a Google Doc as plain text using Drive v3 export endpoint.
+ * Uses the script's OAuth token. Requires UrlFetchApp authorization.
+ */
+function exportGoogleDocAsText_(fileId) {
+  var url = 'https://www.googleapis.com/drive/v3/files/' + fileId +
+            '/export?mimeType=text/plain';
+
+  var token = ScriptApp.getOAuthToken();
+
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  });
+
+  var code = resp.getResponseCode();
+  if (code !== 200) {
+    throw new Error('Export failed. HTTP ' + code + ' — ' + resp.getContentText());
+  }
+
+  return resp.getContentText();
+}
+
+/** Safe formatting helpers (formatting should never crash the run) */
+function safeSetBold_(para, val) {
+  try { para.setBold(val); } catch (e) {}
+}
+
+function safeSetItalic_(para, val) {
+  try { para.setItalic(val); } catch (e) {}
+}
+
+function safeSetFontSize_(para, size) {
+  try { para.setFontSize(size); } catch (e) {}
+}
