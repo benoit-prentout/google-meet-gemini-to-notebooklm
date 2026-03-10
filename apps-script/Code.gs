@@ -1,17 +1,17 @@
 /**
  * Google Meet Gemini Notes → NotebookLM Sync
  * 
- * Version ULTRA-OPTIMISÉE (Bulk Insertion).
- * Conçue pour traiter des centaines de réunions sans ralentissement.
+ * Version INDUSTRIELLE (Google Docs API v1).
+ * Utilise le mode "Batch Update" pour une vitesse instantanée.
  */
 
 const CONFIG = {
   MASTER_DOC_ID: '', 
   SOURCE_FOLDERS: ['Meet Recordings'], 
   SYNC_MARKER: '[SYNCED_TO_NOTEBOOKLM_MASTER_DOC]',
-  MAX_DOC_CHARS: 900000,
+  MAX_DOC_CHARS: 950000,
   ENABLE_NOTIFICATIONS: true,
-  MAX_FILES_PER_RUN: 30 // Augmenté grâce à l'optimisation
+  MAX_FILES_PER_RUN: 25
 };
 
 function onOpen() {
@@ -25,23 +25,24 @@ function onOpen() {
 }
 
 function appendMeetNotesToMaster() {
-  let doc = DocumentApp.getActiveDocument();
-  if (!doc && CONFIG.MASTER_DOC_ID) doc = DocumentApp.openById(CONFIG.MASTER_DOC_ID);
-  if (!doc) throw new Error("Document maître non trouvé.");
+  let docId = CONFIG.MASTER_DOC_ID;
+  if (!docId) {
+    try { docId = DocumentApp.getActiveDocument().getId(); } catch(e) {}
+  }
+  if (!docId) throw new Error("ID du document maître non trouvé.");
 
-  const body = doc.getBody();
-  const initialTextLength = body.getText().length;
-  
-  if (initialTextLength > CONFIG.MAX_DOC_CHARS) {
-    try { DocumentApp.getUi().alert("⚠️ Document plein. Veuillez l'archiver."); } catch(e) {}
+  // Vérification rapide de la taille (seule opération DocumentApp)
+  const body = DocumentApp.openById(docId).getBody();
+  if (body.getText().length > CONFIG.MAX_DOC_CHARS) {
+    console.warn("Document plein.");
     return;
   }
 
   let syncedMeetings = [];
   let processedCount = 0;
-  let hasContent = initialTextLength > 2;
+  let requests = []; // Liste des modifications à envoyer à l'API
 
-  console.log("Démarrage de la synchronisation (Mode BULK)...");
+  console.log("Démarrage de la synchronisation (API Docs v1)...");
 
   CONFIG.SOURCE_FOLDERS.forEach(folderNameOrId => {
     if (processedCount >= CONFIG.MAX_FILES_PER_RUN) return;
@@ -55,33 +56,60 @@ function appendMeetNotesToMaster() {
       const file = files.next();
       if (file.getDescription().includes(CONFIG.SYNC_MARKER)) continue;
 
-      const startTime = new Date().getTime();
+      console.log(`Préparation de : ${file.getName()}`);
       
       try {
         const rawText = exportDocToText_(file.getId());
-        processMeetingBulk_(file, rawText, body, hasContent);
+        const meetingRequests = prepareMeetingRequests_(file, rawText);
+        requests = requests.concat(meetingRequests);
         
-        hasContent = true;
         syncedMeetings.push(file.getName());
         processedCount++;
         
-        const duration = (new Date().getTime() - startTime) / 1000;
-        console.log(`✅ ${file.getName()} traité en ${duration}s`);
+        // On marque le fichier Drive immédiatement
+        file.setDescription(`${file.getDescription()}\n${CONFIG.SYNC_MARKER}`.trim());
       } catch (e) {
         console.error(`Erreur sur "${file.getName()}": ${e.message}`);
       }
     }
   });
 
-  if (syncedMeetings.length > 0) {
-    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, doc.getUrl());
+  // ENVOI GROUPÉ : Une seule requête réseau pour TOUTES les réunions
+  if (requests.length > 0) {
+    console.log(`Envoi de ${syncedMeetings.length} réunions au document...`);
+    Docs.Documents.batchUpdate({requests: requests}, docId);
+    
+    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, `https://docs.google.com/document/d/${docId}/edit`);
+    console.log("✅ Synchronisation terminée avec succès.");
     try { DocumentApp.getUi().alert(`✅ ${syncedMeetings.length} réunion(s) ajoutée(s).`); } catch(e) {}
+  } else {
+    console.log("Aucune nouvelle réunion.");
   }
 }
 
 /**
- * Extraction rapide (API Drive)
+ * Prépare les instructions d'insertion pour l'API Docs.
+ * On insère à l'index 1 (juste après le début) pour plus de simplicité.
  */
+function prepareMeetingRequests_(file, rawText) {
+  const participants = extractParticipants_(rawText);
+  const cleanedText = cleanGeminiText_(rawText);
+  const dateStr = file.getDateCreated().toLocaleDateString();
+  
+  // On construit le bloc de texte
+  let fullBlock = `\n\n${file.getName()}\n📅 Date : ${dateStr}\n`;
+  if (participants) fullBlock += `👥 Participants : ${participants}\n`;
+  fullBlock += `----------------------------------------------------------\n${cleanedText}\n`;
+
+  // On demande à l'API d'insérer ce bloc à la fin du document
+  return [{
+    insertText: {
+      endOfSegmentLocation: { segmentId: "" },
+      text: fullBlock
+    }
+  }];
+}
+
 function exportDocToText_(fileId) {
   const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`;
   return UrlFetchApp.fetch(url, {
@@ -89,53 +117,6 @@ function exportDocToText_(fileId) {
     headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
     muteHttpExceptions: true
   }).getContentText();
-}
-
-/**
- * Insertion BULK (Très rapide)
- */
-function processMeetingBulk_(file, rawText, body, addPageBreak) {
-  const participants = extractParticipants_(rawText);
-  const cleanedText = cleanGeminiText_(rawText);
-
-  if (addPageBreak) body.appendPageBreak();
-
-  // 1. En-tête (Titre + Date + Participants)
-  const titlePara = body.appendParagraph(file.getName());
-  safeSetHeading_(titlePara, DocumentApp.ParagraphHeading.HEADING_2);
-
-  body.appendParagraph(`📅 Date : ${file.getDateCreated().toLocaleDateString()}`)
-      .setItalic(true).setFontSize(10).setBold(false).setHeading(DocumentApp.ParagraphHeading.NORMAL);
-  
-  if (participants) {
-    body.appendParagraph(`👥 Participants : ${participants}`)
-        .setHeading(DocumentApp.ParagraphHeading.HEADING_3).setBold(true).setItalic(false);
-  }
-
-  body.appendParagraph('---').setAttributes({HORIZONTAL_ALIGNMENT: DocumentApp.HorizontalAlignment.CENTER});
-
-  // 2. Corps : UNE SEULE OPÉRATION d'insertion pour tout le bloc
-  // Cela évite de boucler sur les lignes et divise le temps de traitement par 50
-  const bodyPara = body.appendParagraph(cleanedText);
-  
-  const STYLE_CLEAN = {};
-  STYLE_CLEAN[DocumentApp.Attribute.BOLD] = false;
-  STYLE_CLEAN[DocumentApp.Attribute.ITALIC] = false;
-  STYLE_CLEAN[DocumentApp.Attribute.FONT_SIZE] = 11;
-  STYLE_CLEAN[DocumentApp.Attribute.HEADING] = DocumentApp.ParagraphHeading.NORMAL;
-  
-  bodyPara.setAttributes(STYLE_CLEAN);
-
-  // 3. Marquage
-  file.setDescription(`${file.getDescription()}\n${CONFIG.SYNC_MARKER}`.trim());
-}
-
-function safeSetHeading_(para, heading) {
-  try {
-    para.setHeading(heading);
-  } catch (e) {
-    para.setBold(true).setFontSize(heading === DocumentApp.ParagraphHeading.HEADING_2 ? 14 : 12);
-  }
 }
 
 function resetSyncMarkers() {
