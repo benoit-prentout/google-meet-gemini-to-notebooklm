@@ -2,27 +2,19 @@
  * Append Google Meet "Notes by Gemini" docs (in "Meet Recordings" folder)
  * into a single Master Google Doc.
  *
- * Modernized version for Google Apps Script (V8 Engine).
- * 
- * IMPROVEMENTS:
- * - Uses ES6+ syntax (const, let, template literals).
- * - Scales better: Uses file descriptions for deduplication (no 9KB property limit).
- * - More robust error handling and logging.
- * - Explicit OAuth scopes defined in appsscript.json.
+ * Piste 1: Optimisation for NotebookLM (Formatting & Participant Extraction).
  */
 
 const CONFIG = {
-  MASTER_DOC_ID: 'YOUR_MASTER_DOC_ID_HERE', // Set this in script properties or here
+  MASTER_DOC_ID: 'YOUR_MASTER_DOC_ID_HERE', 
   SOURCE_FOLDER_NAME: 'Meet Recordings',
   SYNC_MARKER: '[SYNCED_TO_NOTEBOOKLM_MASTER_DOC]'
 };
 
 /**
  * Main function to sync Meet notes.
- * Set up a time-based trigger to run this (e.g., every 15-30 minutes).
  */
 function appendMeetNotesToMaster() {
-  // Load Doc ID from ScriptProperties if available, otherwise use CONFIG
   const masterDocId = PropertiesService.getScriptProperties().getProperty('MASTER_DOC_ID') || CONFIG.MASTER_DOC_ID;
 
   if (masterDocId === 'YOUR_MASTER_DOC_ID_HERE' || !masterDocId) {
@@ -30,7 +22,6 @@ function appendMeetNotesToMaster() {
     return;
   }
 
-  // Find source folder
   const folders = DriveApp.getFoldersByName(CONFIG.SOURCE_FOLDER_NAME);
   if (!folders.hasNext()) {
     console.warn(`Source folder not found: ${CONFIG.SOURCE_FOLDER_NAME}`);
@@ -38,7 +29,6 @@ function appendMeetNotesToMaster() {
   }
   const meetFolder = folders.next();
 
-  // Open master doc
   let masterDoc;
   try {
     masterDoc = DocumentApp.openById(masterDocId);
@@ -48,7 +38,6 @@ function appendMeetNotesToMaster() {
   }
   const body = masterDoc.getBody();
 
-  // Iterate files in the folder
   const files = meetFolder.getFiles();
   let count = 0;
 
@@ -59,15 +48,12 @@ function appendMeetNotesToMaster() {
     const mime = file.getMimeType();
     const description = file.getDescription() || '';
 
-    // Deduplication check
     if (description.includes(CONFIG.SYNC_MARKER)) {
       continue;
     }
 
-    // Only process Google Docs
     if (mime !== MimeType.GOOGLE_DOCS) {
       console.log(`Skipping non-Doc file: ${fileName}`);
-      // Mark as skipped so we don't check it every time
       file.setDescription(`${description}\n${CONFIG.SYNC_MARKER} (SKIPPED: Not a Google Doc)`.trim());
       continue;
     }
@@ -75,24 +61,44 @@ function appendMeetNotesToMaster() {
     console.log(`Processing: ${fileName} (${fileId})`);
 
     try {
-      // Export Meet Doc to plain text
-      const text = exportGoogleDocAsText_(fileId);
+      const rawText = exportGoogleDocAsText_(fileId);
+      
+      // --- PISTE 1: Formatting & Extraction ---
+      const participants = extractParticipants_(rawText);
+      const cleanedText = cleanGeminiText_(rawText);
 
-      // Append to Master Doc
       if (body.getText().length > 0) {
         body.appendPageBreak();
       }
 
-      const titlePara = body.appendParagraph(`Meeting: ${fileName}`);
-      titlePara.setBold(true).setFontSize(14);
+      // H2 for Meeting Title (helps NotebookLM segmentation)
+      const titlePara = body.appendParagraph(fileName);
+      titlePara.setHeading(DocumentApp.ParagraphHeading.HEADING_2);
 
-      const datePara = body.appendParagraph(`Date added: ${new Date().toLocaleString()}`);
+      // Metadata section
+      const datePara = body.appendParagraph(`📅 Date of Meeting: ${file.getDateCreated().toLocaleDateString()}`);
       datePara.setItalic(true).setFontSize(10);
+      
+      if (participants) {
+        const partPara = body.appendParagraph(`👥 Participants: ${participants}`);
+        partPara.setHeading(DocumentApp.ParagraphHeading.HEADING_3);
+      }
 
-      body.appendParagraph(''); // Spacer
-      body.appendParagraph(text);
+      body.appendParagraph('---').setAttributes({HORIZONTAL_ALIGNMENT: DocumentApp.HorizontalAlignment.CENTER});
 
-      // Mark as processed using file description
+      // Append content by paragraphs (splitting by newline for better layout)
+      const lines = cleanedText.split('\n');
+      lines.forEach(line => {
+        if (line.trim()) {
+          const p = body.appendParagraph(line.trim());
+          // Optional: detected if line looks like a sub-header
+          if (line.trim().length < 50 && (line.includes(':') || line.toUpperCase() === line)) {
+             p.setBold(true);
+          }
+        }
+      });
+
+      // Mark as processed
       file.setDescription(`${description}\n${CONFIG.SYNC_MARKER}`.trim());
       console.log(`✅ Successfully appended: ${fileName}`);
       count++;
@@ -107,6 +113,39 @@ function appendMeetNotesToMaster() {
   } else {
     console.log('No new meetings found to sync.');
   }
+}
+
+/**
+ * Extract participants list from the text.
+ * Gemini notes usually have a "Participants" or "Attendees" line.
+ */
+function extractParticipants_(text) {
+  const patterns = [
+    /Participants:\s*(.*)/i,
+    /Attendees:\s*(.*)/i,
+    /Présents:\s*(.*)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) return match[1].trim();
+  }
+  return null;
+}
+
+/**
+ * Remove noise from exported text and prepare for Master Doc.
+ */
+function cleanGeminiText_(text) {
+  // Remove redundant participant lines if we already extracted them
+  let cleaned = text.replace(/Participants:\s*(.*)/i, '');
+  cleaned = cleaned.replace(/Attendees:\s*(.*)/i, '');
+  cleaned = cleaned.replace(/Présents:\s*(.*)/i, '');
+  
+  // Remove common "Notes by Gemini" headers if they exist in text
+  cleaned = cleaned.replace(/Notes generated by Gemini/gi, '');
+  
+  return cleaned.trim();
 }
 
 /**
@@ -126,21 +165,13 @@ function exportGoogleDocAsText_(fileId) {
     throw new Error(`Export API error: ${response.getResponseCode()} - ${response.getContentText()}`);
   }
 
-  // Clean up some common text export noise if needed
-  let text = response.getContentText();
-  
-  // Optional: Remove trailing page breaks or specific Meet artifacts if needed
-  return text.trim();
+  return response.getContentText();
 }
 
 /**
- * Setup function to help the user configure the script.
+ * Setup function
  */
 function setup() {
-  const ui = SpreadsheetApp.getUi ? SpreadsheetApp : null; // Check if we're in a spreadsheet or standalone
-  
-  // This is a placeholder since this is usually a standalone script.
-  // In a standalone script, you'd just run this once and check logs.
   console.log('--- SETUP INSTRUCTIONS ---');
   console.log('1. Go to Project Settings (cog icon).');
   console.log('2. Scroll to "Script Properties".');
@@ -149,5 +180,4 @@ function setup() {
   console.log('   Value: [Your Google Doc ID]');
   console.log('4. Ensure you have a folder named "Meet Recordings" in your Drive.');
   console.log('5. Run "appendMeetNotesToMaster" manually once to authorize.');
-  console.log('6. Set up a Time-driven trigger to automate.');
 }
