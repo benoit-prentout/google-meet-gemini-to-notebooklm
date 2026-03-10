@@ -15,7 +15,7 @@ NotebookLM est puissant, mais il limite le nombre de sources. En regroupant des 
 * 👥 **Support Équipe** : Récupère les notes des réunions organisées par vos collègues (fichiers "Partagés avec moi", "Drive Partagés" ou contenant "Notes par Gemini").
 * 📊 **Tableau Récapitulatif** : Un tableau s'auto-génère en haut de votre document pour lister toutes les réunions synchronisées.
 * 🛡️ **Synchro Intelligente** : Fonctionne même sur les fichiers où vous n'avez que des droits de lecture.
-* 📦 **Archives Neutres** : Les archives automatiques sont nommées "Recueil de transcriptions" pour ne pas confondre NotebookLM.
+* 📦 **Archives Neutres (English)** : Les archives automatiques sont nommées **"Meeting Notes Archive"** pour que NotebookLM comprenne parfaitement qu'il s'agit de sources de données historiques.
 * ⚡ **Performance** : Utilise les APIs Google avancées pour traiter 20+ réunions en quelques secondes.
 
 ---
@@ -26,7 +26,7 @@ NotebookLM est puissant, mais il limite le nombre de sources. En regroupant des 
 2. **Filtrage** : Il ignore ce qui est déjà synchronisé grâce à une base de données interne.
 3. **Nettoyage** : Il extrait le texte, retire le superflu (mentions Gemini, formatage Markdown complexe).
 4. **Insertion** : Il ajoute les notes en haut du document et met à jour le tableau récapitulatif.
-5. **Archivage** : Si le document devient trop lourd, il crée un **"Recueil de transcriptions"** horodaté et repart à zéro.
+5. **Archivage** : Si le document devient trop lourd, il crée un document **"Meeting Notes Archive"** horodaté et repart à zéro.
 
 ---
 
@@ -59,7 +59,7 @@ Le script a besoin d'accéder directement à Drive et Docs.
 
 ### 5️⃣ Automatisation (Optionnel mais recommandé)
 Pour que la synchro se fasse toute seule toutes les 15 minutes :
-1. In Apps Script, cliquez sur l'icône horloge (**Déclencheurs**) à gauche.
+1. Dans Apps Script, cliquez sur l'icône horloge (**Déclencheurs**) à gauche.
 2. Cliquez sur **+ Ajouter un déclencheur**.
 3. Choisissez `appendMeetNotesToMaster`.
 4. Type de source : **Déclencheur temporel**.

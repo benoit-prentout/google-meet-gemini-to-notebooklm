@@ -205,7 +205,7 @@ function checkAndArchive_(docId, timezone) {
   try {
     const dateStr = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd — HH'h'mm");
 
-    const copy = apiCall_(() => Drive.Files.copy({ name: `Recueil de Transcriptions Meet — ${dateStr}` }, docId));
+    const copy = apiCall_(() => Drive.Files.copy({ name: `Meeting Notes Archive — ${dateStr}` }, docId));
     const archiveUrl = `https://docs.google.com/document/d/${copy.id}/edit`;
 
     // Marquer l'archive comme synchronisée localement
@@ -224,12 +224,12 @@ function checkAndArchive_(docId, timezone) {
       clearRequests.push({ deleteContentRange: { range: { startIndex: 1, endIndex } } });
     }
     clearRequests.push({
-      insertText: { location: { index: 1 }, text: `[Recueil de transcriptions du ${dateStr} → ${archiveUrl} ]\n\n` },
+      insertText: { location: { index: 1 }, text: `[Meeting Notes Archive du ${dateStr} → ${archiveUrl} ]\n\n` },
     });
     apiCall_(() => Docs.Documents.batchUpdate({ requests: clearRequests }, docId));
 
     props.setProperty('estimatedChars', '0');
-    console.log(`✅ Archivé : Recueil de Transcriptions Meet — ${dateStr} (${archiveUrl})`);
+    console.log(`✅ Archivé : Meeting Notes Archive — ${dateStr} (${archiveUrl})`);
 
   } catch (e) {
     console.error(`Archivage échoué : ${e.message}`);
