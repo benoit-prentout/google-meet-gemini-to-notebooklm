@@ -1,12 +1,7 @@
 /**
- * Google Meet Gemini Notes → NotebookLM Sync (Pro Version)
+ * Google Meet Gemini Notes → NotebookLM Sync
  * 
- * Includes:
- * - Piste 1: Improved Formatting & Extraction
- * - Piste 2: Auto-archiving (Saturation management)
- * - Piste 4: Email Notifications & Web Dashboard
- * - Piste 5: Multi-source Folder Support
- * - Menu: Custom menu in Master Doc + Reset function
+ * Automate the consolidation of Google Meet "Notes by Gemini" into a Master Doc.
  */
 
 const CONFIG = {
@@ -15,30 +10,33 @@ const CONFIG = {
   MAX_DOC_CHARS: 850000, 
   SYNC_MARKER: '[SYNCED_TO_NOTEBOOKLM_MASTER_DOC]',
   ENABLE_NOTIFICATIONS: true,
-  // Removed dynamic call from global scope to avoid permission errors
   NOTIFICATION_EMAIL: '' 
 };
 
 /**
- * Piste 6: Add a custom menu to the Google Doc.
- * This runs when the document is opened (if script is bound to the doc).
+ * Creates a custom menu in the Google Doc.
+ * Runs automatically when the document is opened.
  */
 function onOpen() {
-  const ui = DocumentApp.getUi();
-  ui.createMenu('🚀 NotebookLM')
-      .addItem('Sincroniser maintenant', 'appendMeetNotesToMaster')
-      .addSeparator()
-      .addItem('Réinitialiser tous les marqueurs (Reset)', 'resetSyncMarkers')
-      .addToUi();
+  try {
+    const ui = DocumentApp.getUi();
+    ui.createMenu('🚀 NotebookLM')
+        .addItem('Sincroniser maintenant', 'appendMeetNotesToMaster')
+        .addSeparator()
+        .addItem('Réinitialiser tous les marqueurs (Reset)', 'resetSyncMarkers')
+        .addToUi();
+  } catch (e) {
+    console.error('Failed to create menu: ' + e.message);
+  }
 }
 
 /**
- * Main function to sync Meet notes.
+ * Main function to sync Meet notes from Drive folders to the Master Doc.
  */
 function appendMeetNotesToMaster() {
   let masterDocId = PropertiesService.getScriptProperties().getProperty('MASTER_DOC_ID') || CONFIG.MASTER_DOC_ID;
 
-  // Try to auto-detect if we're in a container-bound script
+  // Auto-detect if we're in a container-bound script
   if (masterDocId === 'YOUR_MASTER_DOC_ID_HERE' || !masterDocId) {
     try {
       masterDocId = DocumentApp.getActiveDocument().getId();
@@ -48,18 +46,18 @@ function appendMeetNotesToMaster() {
     }
   }
 
-  let masterDoc = DocumentApp.openById(masterDocId);
+  const masterDoc = DocumentApp.openById(masterDocId);
   
+  // Check for document saturation and rotate if needed
   if (masterDoc.getBody().getText().length > CONFIG.MAX_DOC_CHARS) {
     masterDocId = rotateMasterDoc_(masterDoc);
-    masterDoc = DocumentApp.openById(masterDocId);
   }
 
-  const body = masterDoc.getBody();
+  const body = DocumentApp.openById(masterDocId).getBody();
   let syncedMeetings = [];
 
   CONFIG.SOURCE_FOLDERS.forEach(folderNameOrId => {
-    let folder = getFolder_(folderNameOrId);
+    const folder = getFolder_(folderNameOrId);
     if (!folder) return;
 
     const files = folder.getFiles();
@@ -79,7 +77,7 @@ function appendMeetNotesToMaster() {
   });
 
   if (syncedMeetings.length > 0) {
-    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, masterDoc.getUrl());
+    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, DocumentApp.openById(masterDocId).getUrl());
     const msg = `✅ ${syncedMeetings.length} réunions synchronisées !`;
     if (isUiAvailable_()) DocumentApp.getUi().alert(msg);
     console.log(msg);
@@ -93,7 +91,7 @@ function appendMeetNotesToMaster() {
 }
 
 /**
- * RESET FUNCTION: Removes the [SYNCED] marker from all files in source folders.
+ * Removes the [SYNCED] marker from all files in source folders.
  */
 function resetSyncMarkers() {
   const ui = isUiAvailable_() ? DocumentApp.getUi() : null;
@@ -104,7 +102,7 @@ function resetSyncMarkers() {
 
   let count = 0;
   CONFIG.SOURCE_FOLDERS.forEach(folderNameOrId => {
-    let folder = getFolder_(folderNameOrId);
+    const folder = getFolder_(folderNameOrId);
     if (!folder) return;
 
     const files = folder.getFiles();
@@ -125,7 +123,7 @@ function resetSyncMarkers() {
 }
 
 /**
- * Piste 2: Create a new Master Doc when the current one is full.
+ * Creates a new Master Doc when the current one is full.
  */
 function rotateMasterDoc_(oldDoc) {
   const oldName = oldDoc.getName();
@@ -146,7 +144,7 @@ function rotateMasterDoc_(oldDoc) {
 }
 
 /**
- * Piste 4: Send Email summary
+ * Sends an email summary of the synchronization.
  */
 function sendNotification_(meetings, docUrl) {
   const email = getNotificationEmail_();
@@ -156,7 +154,7 @@ function sendNotification_(meetings, docUrl) {
 }
 
 /**
- * Get notification email safely
+ * Retrieves the notification email safely.
  */
 function getNotificationEmail_() {
   if (CONFIG.NOTIFICATION_EMAIL) return CONFIG.NOTIFICATION_EMAIL;
@@ -168,7 +166,7 @@ function getNotificationEmail_() {
 }
 
 /**
- * Check if UI is available (not a background trigger)
+ * Checks if the User Interface is available (not a background trigger).
  */
 function isUiAvailable_() {
   try {
@@ -180,7 +178,7 @@ function isUiAvailable_() {
 }
 
 /**
- * Internal helper to find folder by ID or Name
+ * Internal helper to find folder by ID or Name.
  */
 function getFolder_(folderNameOrId) {
   let folder;
@@ -195,7 +193,7 @@ function getFolder_(folderNameOrId) {
 }
 
 /**
- * Helper to process a single meeting
+ * Processes and formats a single meeting document.
  */
 function processMeeting_(file, rawText, body) {
   const participants = extractParticipants_(rawText);
@@ -222,6 +220,9 @@ function processMeeting_(file, rawText, body) {
   file.setDescription(`${file.getDescription()}\n${CONFIG.SYNC_MARKER}`.trim());
 }
 
+/**
+ * Extracts participant list from Gemini notes.
+ */
 function extractParticipants_(text) {
   const patterns = [/Participants:\s*(.*)/i, /Attendees:\s*(.*)/i, /Présents:\s*(.*)/i];
   for (const pattern of patterns) {
@@ -231,11 +232,17 @@ function extractParticipants_(text) {
   return null;
 }
 
+/**
+ * Cleans the raw text by removing headers and metadata lines.
+ */
 function cleanGeminiText_(text) {
   let cleaned = text.replace(/Participants:\s*(.*)/i, '').replace(/Attendees:\s*(.*)/i, '').replace(/Présents:\s*(.*)/i, '');
   return cleaned.replace(/Notes generated by Gemini/gi, '').trim();
 }
 
+/**
+ * Exports a Google Doc as plain text.
+ */
 function exportGoogleDocAsText_(fileId) {
   const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`;
   const response = UrlFetchApp.fetch(url, {
@@ -248,7 +255,7 @@ function exportGoogleDocAsText_(fileId) {
 }
 
 /**
- * Piste 4: Dashboard
+ * Dashboard for Web App deployment.
  */
 function doGet() {
   const props = PropertiesService.getScriptProperties().getProperties();
