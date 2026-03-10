@@ -38,24 +38,37 @@ This master document serves as a "compounding brain" for **NotebookLM**, allowin
 ### 2️⃣ Deploy the Script
 1. Go to [script.google.com](https://script.google.com).
 2. Create a **New Project**.
-3. Copy the content of `apps-script/Code.gs` into the editor.
-4. (Optional but Recommended) Enable the "Classic editor" or use `clasp` to upload `appsscript.json`, OR manually ensure the **Drive API** is enabled in "Services".
+3. Copy the content of `apps-script/Code.gs` into the editor (replace everything).
+4. **Show the Manifest**: 
+   - Click the **Project Settings** (cog icon ⚙️) on the left.
+   - Check the box: "**Show 'appsscript.json' manifest file in editor**".
+   - Go back to the **Editor** (< > icon), click on `appsscript.json`, and replace its content with the content of `apps-script/appsscript.json` from this repo.
+5. **Add the Drive Service**:
+   - In the **Editor**, click the **+** next to **Services** in the left sidebar.
+   - Select **Google Drive API**.
+   - Ensure the version is **v3** and click **Add**.
 
 ### 3️⃣ Configure
-1. In the Apps Script editor, go to **Project Settings** (cog icon).
+1. In the Apps Script editor, go to **Project Settings** (cog icon ⚙️).
 2. Scroll to **Script Properties**.
 3. Add a new property:
    * **Property**: `MASTER_DOC_ID`
    * **Value**: Paste your Master Doc ID here.
 
 ### 4️⃣ Authorize & Automate
-1. Run the `appendMeetNotesToMaster` function once manually to authorize permissions.
-2. Go to **Triggers** (alarm clock icon).
-3. Add a trigger:
-   * Function: `appendMeetNotesToMaster`
-   * Event source: `Time-driven`
-   * Type: `Minutes timer`
-   * Interval: `Every 15 minutes` (or your preference).
+1. **Force Authorization**: 
+   - Select `appendMeetNotesToMaster` in the toolbar and click **Run**.
+   - Click **Review Permissions**.
+   - Select your Google account.
+   - On the "Google hasn't verified this app" screen, click **Advanced** > **Go to [Project Name] (unsafe)**.
+   - Click **Allow**.
+2. **Set the Trigger**:
+   - Go to **Triggers** (alarm clock icon ⏰).
+   - Click **Add Trigger**.
+   - Function: `appendMeetNotesToMaster`
+   - Event source: `Time-driven`
+   - Type: `Minutes timer`
+   - Interval: `Every 15 minutes` (or your preference).
 
 ---
 
