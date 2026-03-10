@@ -12,21 +12,21 @@ NotebookLM est puissant, mais il limite le nombre de sources. En regroupant des 
 
 ### ✨ Nouvelles Fonctionnalités (v4+)
 
-* 👥 **Support Équipe** : Récupère les notes des réunions organisées par vos collègues (fichiers "Partagés avec moi" ou dans des "Drive Partagés").
+* 👥 **Support Équipe** : Récupère les notes des réunions organisées par vos collègues (fichiers "Partagés avec moi", "Drive Partagés" ou contenant "Notes par Gemini").
 * 📊 **Tableau Récapitulatif** : Un tableau s'auto-génère en haut de votre document pour lister toutes les réunions synchronisées.
 * 🛡️ **Synchro Intelligente** : Fonctionne même sur les fichiers où vous n'avez que des droits de lecture.
-* 📦 **Archives Uniques** : Les archives automatiques incluent désormais l'heure pour éviter tout conflit de nom.
+* 📦 **Archives Neutres** : Les archives automatiques sont nommées "Recueil de transcriptions" pour ne pas confondre NotebookLM.
 * ⚡ **Performance** : Utilise les APIs Google avancées pour traiter 20+ réunions en quelques secondes.
 
 ---
 
 ## 🏗 Comment ça marche ?
 
-1. **Scan Global** : Le script cherche "Notes de la réunion" ou "Notes for" partout sur votre Drive.
+1. **Scan Global** : Le script cherche les variantes de notes Gemini ("Notes de la réunion", "Notes for", "Notes par Gemini") partout sur votre Drive.
 2. **Filtrage** : Il ignore ce qui est déjà synchronisé grâce à une base de données interne.
 3. **Nettoyage** : Il extrait le texte, retire le superflu (mentions Gemini, formatage Markdown complexe).
 4. **Insertion** : Il ajoute les notes en haut du document et met à jour le tableau récapitulatif.
-5. **Archivage** : Si le document devient trop lourd, il le met de côté proprement et recommence un nouveau cycle.
+5. **Archivage** : Si le document devient trop lourd, il crée un **"Recueil de transcriptions"** horodaté et repart à zéro.
 
 ---
 
@@ -59,7 +59,7 @@ Le script a besoin d'accéder directement à Drive et Docs.
 
 ### 5️⃣ Automatisation (Optionnel mais recommandé)
 Pour que la synchro se fasse toute seule toutes les 15 minutes :
-1. Dans Apps Script, cliquez sur l'icône horloge (**Déclencheurs**) à gauche.
+1. In Apps Script, cliquez sur l'icône horloge (**Déclencheurs**) à gauche.
 2. Cliquez sur **+ Ajouter un déclencheur**.
 3. Choisissez `appendMeetNotesToMaster`.
 4. Type de source : **Déclencheur temporel**.

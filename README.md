@@ -12,21 +12,21 @@ NotebookLM is powerful, but it limits the number of sources you can add. By grou
 
 ### ✨ New Features (v4+)
 
-* 👥 **Team Support**: Fetches meeting notes organized by your colleagues (files in "Shared with me" or "Shared Drives").
+* 👥 **Team Support**: Fetches meeting notes organized by your colleagues (files in "Shared with me", "Shared Drives", or files containing "Notes par Gemini").
 * 📊 **Summary Table**: An automatically generated table at the top of your document lists all synced meetings.
 * 🛡️ **Smart Sync**: Works even on files where you only have view-only access.
-* 📦 **Unique Archives**: Automatic archives now include timestamps to prevent naming conflicts.
+* 📦 **Neutral Archives**: Automatic archives are named "Meeting Transcripts Collection" to avoid confusing NotebookLM.
 * ⚡ **Performance**: Uses advanced Google APIs to process 20+ meetings in seconds.
 
 ---
 
 ## 🏗 How it works?
 
-1. **Global Scan**: The script searches for "Notes de la réunion" or "Notes for" everywhere on your Drive.
+1. **Global Scan**: The script searches for Gemini note variants ("Notes de la réunion", "Notes for", "Notes par Gemini") everywhere on your Drive.
 2. **Filtering**: It ignores already-synced files using an internal script database.
 3. **Cleaning**: It extracts text, removes Gemini-specific metadata, and simplifies Markdown formatting.
 4. **Insertion**: It adds new notes to the top of the doc and updates the summary table.
-5. **Archiving**: If the document gets too large, it is automatically archived, and a new master doc is started.
+5. **Archiving**: If the document gets too large, it creates a timestamped **"Meeting Transcripts Collection"** and resets.
 
 ---
 
