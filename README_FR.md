@@ -2,118 +2,90 @@
 
 [English](README.md) | [Français](README_FR.md)
 
-Automatisez la consolidation des **"Notes by Gemini" de Google Meet** dans un seul **Google Doc Maître**, créant une source de connaissances durable pour **NotebookLM**.
+Consolidez automatiquement toutes les **"Notes par Gemini" de vos réunions Google Meet** dans un seul **Google Doc Maître**. C'est l'outil idéal pour créer une base de connaissances vivante et illimitée pour **NotebookLM**.
 
 ---
 
-## 🚀 Présentation
+## 🚀 Pourquoi cet outil ?
 
-Ce **Google Apps Script** scanne en continu votre dossier `Meet Recordings`, extrait le texte des nouvelles notes de réunion générées par Gemini, et les insère dans un document maître unique.
+NotebookLM est puissant, mais il limite le nombre de sources. En regroupant des mois de réunions (les vôtres et celles de votre équipe) dans un seul document "cerveau", vous permettez à l'IA de faire des connexions sur le long terme sans jamais atteindre les limites de sources.
 
-Ce document maître sert de "cerveau cumulatif" pour **NotebookLM**, vous permettant d'analyser et synthétiser des mois de réunions sans dépasser les limites de sources de NotebookLM.
+### ✨ Nouvelles Fonctionnalités (v4+)
 
-### ✨ Fonctionnalités Clés
-
-* ✅ **Zéro DocumentApp** — 100% Drive & Docs API pour des performances maximales
-* ✅ **Dédoublonnage illimité** — Utilise les métadonnées cachées des fichiers (appProperties)
-* ✅ **Détection des mises à jour** — Re-synchronise les notes modifiées après leur premier sync
-* ✅ **Archivage automatique** — Archive le doc maître quand il dépasse une taille configurable
-* ✅ **Filtre par date** — Ignorer les fichiers plus vieux que N jours (optionnel)
-* ✅ **Retry avec backoff** — Gère les erreurs transitoires de l'API Google
-* ✅ **Historique des syncs** — Voir les 20 dernières exécutions directement depuis le menu
-* ✅ **Notifications email** — Résumé après chaque sync (nouvelles réunions + MàJ + erreurs)
-* ✅ **Menu interactif** — Toutes les actions accessibles depuis votre Google Doc
+* 👥 **Support Équipe** : Récupère les notes des réunions organisées par vos collègues (fichiers "Partagés avec moi" ou dans des "Drive Partagés").
+* 📊 **Tableau Récapitulatif** : Un tableau s'auto-génère en haut de votre document pour lister toutes les réunions synchronisées.
+* 🛡️ **Synchro Intelligente** : Fonctionne même sur les fichiers où vous n'avez que des droits de lecture.
+* 📦 **Archives Uniques** : Les archives automatiques incluent désormais l'heure pour éviter tout conflit de nom.
+* ⚡ **Performance** : Utilise les APIs Google avancées pour traiter 20+ réunions en quelques secondes.
 
 ---
 
 ## 🏗 Comment ça marche ?
 
-1. **Déclencheur** — S'exécute via un minuteur (ex : toutes les 15 minutes).
-2. **Scan** — Interroge le dossier `Meet Recordings` pour les fichiers non encore synchronisés.
-3. **Détection MàJ** — Identifie les fichiers déjà synchronisés mais modifiés depuis.
-4. **Archivage** — Si le doc maître est trop volumineux, le copie en archive et le réinitialise.
-5. **Export** — Convertit chaque note Meet en texte brut via l'API Drive.
-6. **Nettoyage** — Supprime les métadonnées Gemini, le formatage Markdown, normalise les espaces.
-7. **Insertion groupée** — Envoie toutes les insertions en une seule requête Docs API.
-8. **Marquage** — Stocke `synced=true` et `syncedAt=<timestamp>` dans les métadonnées cachées du fichier.
-9. **Notification** — Envoie un résumé par email (nouvelles réunions, mises à jour, erreurs).
+1. **Scan Global** : Le script cherche "Notes de la réunion" ou "Notes for" partout sur votre Drive.
+2. **Filtrage** : Il ignore ce qui est déjà synchronisé grâce à une base de données interne.
+3. **Nettoyage** : Il extrait le texte, retire le superflu (mentions Gemini, formatage Markdown complexe).
+4. **Insertion** : Il ajoute les notes en haut du document et met à jour le tableau récapitulatif.
+5. **Archivage** : Si le document devient trop lourd, il le met de côté proprement et recommence un nouveau cycle.
 
 ---
 
-## 🛠 Installation
+## 🛠 Guide d'Installation (Débutants)
 
-### 1️⃣ Préparer le Document Maître
+### 1️⃣ Créer le Document Maître
+1. Créez un nouveau **Google Doc** vide (nommez-le par exemple "Maître - Notes de Réunions").
+2. Dans ce document, allez dans le menu **Extensions > Apps Script**.
 
-* Créez un nouveau Google Doc (ex : "Master Meeting Notes").
-* Ouvrez-le et allez dans **Extensions > Apps Script**.
+### 2️⃣ Copier le Code
+1. Effacez tout ce qui se trouve dans l'éditeur (le `function myFunction() { ... }`).
+2. Copiez tout le contenu du fichier `apps-script/Code.gs` de ce dépôt et collez-le dans l'éditeur.
+3. Enregistrez (icône disquette) et nommez le projet "Sync NotebookLM".
 
-### 2️⃣ Déployer le Code
+### 3️⃣ Configurer les Services Google
+Le script a besoin d'accéder directement à Drive et Docs.
+1. À gauche de l'éditeur Apps Script, cliquez sur le **+** à côté de **Services**.
+2. Cherchez **Google Drive API**, sélectionnez-la et cliquez sur **Ajouter**.
+3. Cliquez à nouveau sur le **+**, cherchez **Google Docs API**, sélectionnez-la et cliquez sur **Ajouter**.
 
-1. Copiez `apps-script/Code.gs` dans l'éditeur Apps Script (remplacez tout).
-2. **Afficher le Manifeste** :
-   - Cliquez sur **Paramètres du projet** (icône ⚙️).
-   - Cochez "**Afficher le fichier manifeste « appsscript.json » dans l'éditeur**".
-   - Ouvrez `appsscript.json` dans l'éditeur et remplacez son contenu par celui du dépôt.
+### 4️⃣ Première exécution et Autorisation
+1. Dans la barre d'outils en haut, assurez-vous que `appendMeetNotesToMaster` est sélectionné.
+2. Cliquez sur **Exécuter**.
+3. Une fenêtre d'autorisation s'ouvre :
+   - Cliquez sur **Examiner les autorisations**.
+   - Choisissez votre compte Google.
+   - Si un message "Google n'a pas validé cette application" apparaît : cliquez sur **Paramètres avancés** puis sur **Accéder à Sync NotebookLM (non sécurisé)**.
+   - Cliquez sur **Autoriser**.
+4. Revenez sur votre Google Doc : rafraîchissez la page. Un nouveau menu **🚀 NotebookLM** est apparu !
 
-### 3️⃣ Configurer
-
-Modifiez l'objet `CONFIG` en haut de `Code.gs` :
-
-```javascript
-const CONFIG = {
-  SOURCE_FOLDER_NAME: 'Meet Recordings', // Nom exact de votre dossier Drive
-  MAX_FILES_PER_RUN: 20,                 // Fichiers max par exécution
-  ENABLE_NOTIFICATIONS: true,            // Résumé email après chaque sync
-
-  ARCHIVE_THRESHOLD_CHARS: 800000,       // Archiver au-delà de ~800K caractères (0 = désactivé)
-  ENABLE_UPDATE_DETECTION: true,         // Re-synchroniser les notes modifiées
-  MAX_AGE_DAYS: 0,                       // Ignorer les fichiers plus vieux que N jours (0 = pas de filtre)
-  MAX_RETRIES: 3,                        // Tentatives en cas d'erreur API transitoire
-  HISTORY_SIZE: 20,                      // Nombre de syncs conservés dans l'historique
-};
-```
-
-### 4️⃣ Autoriser & Automatiser
-
-1. **Autoriser** : Sélectionnez `appendMeetNotesToMaster` dans la barre d'outils et cliquez sur **Exécuter**. Suivez les étapes de sécurité Google.
-2. **Rafraîchir** : Rechargez votre Google Doc. Un menu **🚀 NotebookLM** apparaîtra.
-3. **Automatiser** : Dans Apps Script, allez dans **Déclencheurs** (icône ⏰) et ajoutez :
-   - Fonction : `appendMeetNotesToMaster`
-   - Événement : `Déclencheur temporel` → `Minuteur` → `Toutes les 15 minutes`
+### 5️⃣ Automatisation (Optionnel mais recommandé)
+Pour que la synchro se fasse toute seule toutes les 15 minutes :
+1. Dans Apps Script, cliquez sur l'icône horloge (**Déclencheurs**) à gauche.
+2. Cliquez sur **+ Ajouter un déclencheur**.
+3. Choisissez `appendMeetNotesToMaster`.
+4. Type de source : **Déclencheur temporel**.
+5. Type de minuteur : **Minuteur par minutes**.
+6. Intervalle : **Toutes les 15 minutes**.
 
 ---
 
-## 📋 Options du Menu
+## 📋 Utilisation au quotidien
 
-| Option | Description |
+| Option | Utilité |
 |---|---|
-| Synchroniser maintenant | Lancer une synchro immédiatement |
-| Voir l'historique des syncs | Afficher les 20 dernières exécutions (date, nb fichiers, erreurs, durée) |
-| Réinitialiser l'état (Reset) | Effacer l'état de sync — tous les fichiers seront ré-importés |
+| **Synchroniser maintenant** | Force la récupération des dernières réunions immédiatement. |
+| **Archiver maintenant** | Si vous voulez vider le doc manuellement et créer une archive. |
+| **Réinitialiser l'état** | Utile si vous voulez tout ré-importer depuis le début. |
 
 ---
 
-## ❓ Dépannage
+## 🧠 Connexion avec NotebookLM
 
-**Le menu "🚀 NotebookLM" n'apparaît pas**
-Assurez-vous d'avoir ouvert Apps Script *depuis* le document (Extensions > Apps Script). Rafraîchissez la page après avoir sauvegardé le script.
-
-**Erreur "Dossier source introuvable"**
-Vérifiez que `CONFIG.SOURCE_FOLDER_NAME` correspond exactement au nom de votre dossier dans Google Drive.
-
-**Les fichiers ne sont pas détectés**
-Le script utilise l'API `appProperties` de Drive. Vérifiez que l'API Drive v3 est bien activée dans Services.
-
----
-
-## 🧠 Utilisation avec NotebookLM
-
-1. Ouvrez [NotebookLM](https://notebooklm.google.com).
-2. Créez un notebook et ajoutez votre **Google Doc Maître** comme source.
-3. Cliquez sur **Actualiser** dans NotebookLM dès que vous voulez synchroniser vos dernières réunions.
+1. Allez sur [NotebookLM](https://notebooklm.google.com).
+2. Créez un nouveau Notebook.
+3. Ajoutez votre **Google Doc Maître** comme source.
+4. **Important** : À chaque fois que vous utilisez NotebookLM, cliquez sur le bouton **Actualiser** à côté de la source Google Doc pour qu'il prenne en compte les dernières réunions ajoutées par le script.
 
 ---
 
 ## 📜 Licence
-
 MIT

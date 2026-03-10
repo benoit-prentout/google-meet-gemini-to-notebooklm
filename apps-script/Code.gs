@@ -44,81 +44,109 @@ function appendMeetNotesToMaster() {
   const startTime = Date.now();
   const docId = DocumentApp.getActiveDocument().getId();
   const timezone = Session.getTimeZone() || 'Europe/Paris';
+  const props = PropertiesService.getScriptProperties();
 
   console.time('Synchro Totale');
 
-  // 1. Trouver le dossier source
+  // 1. Identification des fichiers à traiter
+  // On cherche : 
+  // - Dans le dossier "Meet Recordings" local
+  // - OU les fichiers partagés dont le nom contient "Notes de la réunion" ou "Notes for"
   const folderId = getFolderIdByName_(CONFIG.SOURCE_FOLDER_NAME);
-  if (!folderId) {
-    const msg = `Dossier "${CONFIG.SOURCE_FOLDER_NAME}" introuvable. Vérifiez CONFIG.SOURCE_FOLDER_NAME.`;
-    console.error(msg);
-    showAlert_(msg);
-    return;
+  
+  let query = `mimeType = 'application/vnd.google-apps.document' and trashed = false`;
+  let folderQuery = folderId ? `'${folderId}' in parents` : '';
+  let nameQuery = `(name contains 'Notes de la réunion' or name contains 'Notes for')`;
+  
+  if (folderQuery) {
+    query += ` and (${folderQuery} or ${nameQuery})`;
+  } else {
+    query += ` and ${nameQuery}`;
   }
-
-  // 2. Détecter les fichiers déjà synchronisés mais modifiés depuis
-  let updatedFiles = [];
-  if (CONFIG.ENABLE_UPDATE_DETECTION) {
-    updatedFiles = detectUpdatedFiles_(folderId);
-    for (const file of updatedFiles) {
-      apiCall_(() => Drive.Files.update({ appProperties: { synced: 'false', syncedAt: '' } }, file.id));
-    }
-    if (updatedFiles.length > 0) console.log(`${updatedFiles.length} fichier(s) modifié(s) — re-sync programmé.`);
-  }
-
-  // 3. Construire la requête Drive pour les fichiers non synchronisés
-  let query = `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.document' and trashed = false and not appProperties has { key='synced' and value='true' }`;
 
   if (CONFIG.MAX_AGE_DAYS > 0) {
     const cutoff = new Date(Date.now() - CONFIG.MAX_AGE_DAYS * 86400000).toISOString();
-    query += ` and createdTime > '${cutoff}'`;
+    query += ` and modifiedTime > '${cutoff}'`;
   }
 
   const result = apiCall_(() => Drive.Files.list({
     q: query,
-    pageSize: CONFIG.MAX_FILES_PER_RUN,
-    fields: 'files(id, name, createdTime)',
+    pageSize: 100, // On prend une marge pour le filtrage manuel
+    fields: 'files(id, name, createdTime, modifiedTime)',
     orderBy: 'createdTime desc',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true
   }));
 
   if (!result.files || result.files.length === 0) {
-    console.log('Aucune nouvelle réunion.');
+    console.log('Aucune réunion trouvée.');
     showAlert_('Tout est déjà à jour !');
-    logSyncRun_({ date: new Date().toISOString(), synced: 0, updated: updatedFiles.length, errors: 0, duration: Date.now() - startTime });
     return;
   }
 
-  // 4. Archivage si le doc dépasse le seuil
+  // 2. Filtrage des fichiers déjà synchronisés (via PropertiesService)
+  const toProcess = [];
+  const updatedIds = [];
+  
+  for (const file of result.files) {
+    const lastSyncTime = props.getProperty('SYNC_' + file.id);
+    
+    if (!lastSyncTime) {
+      toProcess.push(file);
+    } else if (CONFIG.ENABLE_UPDATE_DETECTION) {
+      // Détection de mise à jour : comparaison des dates
+      const modifiedDate = new Date(file.modifiedTime).getTime();
+      const syncDate = parseInt(lastSyncTime, 10);
+      const GRACE_MS = 5 * 60 * 1000; // Marge de 5min
+      
+      if (modifiedDate > syncDate + GRACE_MS) {
+        toProcess.push(file);
+        updatedIds.push(file.id);
+      }
+    }
+    
+    if (toProcess.length >= CONFIG.MAX_FILES_PER_RUN) break;
+  }
+
+  if (toProcess.length === 0) {
+    console.log('Tout est déjà synchronisé.');
+    showAlert_('Tout est déjà à jour !');
+    return;
+  }
+
+  // 3. Archivage si le doc dépasse le seuil
   if (CONFIG.ARCHIVE_THRESHOLD_CHARS > 0) {
     checkAndArchive_(docId, timezone);
   }
 
-  // 5. Traitement des fichiers
-  const updatedIds = new Set(updatedFiles.map(f => f.id));
+  // 4. Traitement des fichiers
+  const filesToProcess = toProcess.reverse();
   const requests = [];
-  const syncedNames = [];
+  const syncedEntries = [];
   let errorCount = 0;
 
-  for (const file of result.files) {
+  for (const file of filesToProcess) {
     try {
       console.log(`Extraction : ${file.name}`);
       const rawText = apiCall_(() => exportFileAsText_(file.id));
 
       const participants = extractParticipants_(rawText);
       const cleanText = cleanGeminiText_(rawText);
-      const isUpdate = updatedIds.has(file.id);
+      const isUpdate = updatedIds.indexOf(file.id) !== -1;
       const dateStr = Utilities.formatDate(new Date(file.createdTime), timezone, 'dd/MM/yyyy');
 
+      const blockText = buildBlock_(file.name, dateStr, participants, cleanText, isUpdate);
+      
       requests.push({
         insertText: {
           location: { index: 1 },
-          text: buildBlock_(file.name, dateStr, participants, cleanText, isUpdate),
+          text: blockText,
         },
       });
 
-      const syncedAt = new Date().toISOString();
-      apiCall_(() => Drive.Files.update({ appProperties: { synced: 'true', syncedAt } }, file.id));
-      syncedNames.push(file.name);
+      // Stocker l'état de synchro localement (timestamp de modification)
+      props.setProperty('SYNC_' + file.id, String(new Date(file.modifiedTime).getTime()));
+      syncedEntries.push({ name: file.name, date: dateStr });
 
     } catch (e) {
       errorCount++;
@@ -126,14 +154,20 @@ function appendMeetNotesToMaster() {
     }
   }
 
-  // 6. Envoi groupé vers le document
+  // 5. Envoi groupé vers le document
   if (requests.length > 0) {
     apiCall_(() => Docs.Documents.batchUpdate({ requests }, docId));
     updateDocSizeEstimate_(requests);
+    
+    try {
+      updateSummaryTable_(docId, syncedEntries);
+    } catch (e) {
+      console.error(`Tableau récapitulatif échoué : ${e.message}`);
+    }
 
     if (CONFIG.ENABLE_NOTIFICATIONS) {
       try {
-        sendNotification_(syncedNames, updatedFiles.map(f => f.name), errorCount, `https://docs.google.com/document/d/${docId}/edit`);
+        sendNotification_(syncedEntries.map(e => e.name), updatedIds.map(id => id), errorCount, `https://docs.google.com/document/d/${docId}/edit`);
       } catch (e) {
         console.error(`Notification échouée : ${e.message}`);
       }
@@ -141,10 +175,10 @@ function appendMeetNotesToMaster() {
 
     const duration = Date.now() - startTime;
     console.timeEnd('Synchro Totale');
-    logSyncRun_({ date: new Date().toISOString(), synced: syncedNames.length, updated: updatedFiles.length, errors: errorCount, duration });
+    logSyncRun_({ date: new Date().toISOString(), synced: syncedEntries.length, updated: updatedIds.length, errors: errorCount, duration });
 
     const errorMsg = errorCount > 0 ? ` ⚠️ ${errorCount} erreur(s) — voir les logs STACKDRIVER.` : '';
-    showAlert_(`✅ ${syncedNames.length} réunion(s) ajoutée(s).${errorMsg}`);
+    showAlert_(`✅ ${syncedEntries.length} réunion(s) ajoutée(s).${errorMsg}`);
   }
 }
 
@@ -169,13 +203,14 @@ function checkAndArchive_(docId, timezone) {
   console.log(`📦 Seuil d'archivage atteint (~${estimatedChars} chars). Archivage en cours...`);
 
   try {
-    const dateStr = Utilities.formatDate(new Date(), timezone, 'yyyy-MM-dd');
+    const dateStr = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd — HH'h'mm");
 
-    // Copier le doc maître vers une archive
     const copy = apiCall_(() => Drive.Files.copy({ name: `NotebookLM Archive — ${dateStr}` }, docId));
     const archiveUrl = `https://docs.google.com/document/d/${copy.id}/edit`;
 
-    // Récupérer uniquement les endIndex (pas le texte) pour éviter le timeout sur gros docs
+    // Marquer l'archive comme synchronisée localement
+    props.setProperty('SYNC_' + copy.id, String(Date.now()));
+
     const metaUrl = `https://docs.googleapis.com/v1/documents/${docId}?fields=body.content.endIndex`;
     const metaResp = UrlFetchApp.fetch(metaUrl, {
       headers: { Authorization: `Bearer ${ScriptApp.getOAuthToken()}` },
@@ -184,7 +219,6 @@ function checkAndArchive_(docId, timezone) {
     const content = metaData.body.content;
     const endIndex = content[content.length - 1].endIndex - 1;
 
-    // Vider + insérer le lien archive en un seul batch
     const clearRequests = [];
     if (endIndex > 1) {
       clearRequests.push({ deleteContentRange: { range: { startIndex: 1, endIndex } } });
@@ -209,29 +243,6 @@ function updateDocSizeEstimate_(requests) {
   props.setProperty('estimatedChars', String(current + added));
 }
 
-// ─── DÉTECTION DES MISES À JOUR ───────────────────────────────────────────────
-
-function detectUpdatedFiles_(folderId) {
-  try {
-    const result = apiCall_(() => Drive.Files.list({
-      q: `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.document' and trashed = false and appProperties has { key='synced' and value='true' }`,
-      fields: 'files(id, name, modifiedTime, appProperties)',
-      pageSize: 200,
-    }));
-
-    if (!result.files) return [];
-
-    return result.files.filter(file => {
-      const syncedAt = file.appProperties && file.appProperties.syncedAt;
-      if (!syncedAt) return false;
-      return new Date(file.modifiedTime) > new Date(syncedAt);
-    });
-  } catch (e) {
-    console.error(`detectUpdatedFiles_ échoué : ${e.message}`);
-    return [];
-  }
-}
-
 // ─── RESET ────────────────────────────────────────────────────────────────────
 
 function resetSyncProperties() {
@@ -243,15 +254,16 @@ function resetSyncProperties() {
   );
   if (response !== ui.Button.YES) return;
 
-  const folderId = getFolderIdByName_(CONFIG.SOURCE_FOLDER_NAME);
-  if (!folderId) { ui.alert('Dossier source introuvable.'); return; }
-
-  const result = apiCall_(() => Drive.Files.list({ q: `'${folderId}' in parents`, fields: 'files(id)', pageSize: 1000 }));
-  for (const file of result.files || []) {
-    apiCall_(() => Drive.Files.update({ appProperties: { synced: 'false', syncedAt: '' } }, file.id));
+  const props = PropertiesService.getScriptProperties();
+  const allProps = props.getProperties();
+  
+  for (const key in allProps) {
+    if (key.indexOf('SYNC_') === 0) {
+      props.deleteProperty(key);
+    }
   }
 
-  PropertiesService.getScriptProperties().deleteProperty('estimatedChars');
+  props.deleteProperty('estimatedChars');
   ui.alert('🔄 Prêt pour ré-importation.');
 }
 
@@ -287,6 +299,33 @@ function logSyncRun_(run) {
   }
 }
 
+// ─── TABLEAU RÉCAPITULATIF ────────────────────────────────────────────────────
+
+function updateSummaryTable_(docId, newEntries) {
+  const doc = DocumentApp.openById(docId);
+  const body = doc.getBody();
+  
+  let table = body.getTables()[0];
+  
+  if (!table) {
+    table = body.insertTable(0, [['Date', 'Réunion']]);
+    table.getRow(0).setAttributes({
+      [DocumentApp.Attribute.BOLD]: true,
+      [DocumentApp.Attribute.BACKGROUND_COLOR]: '#f3f3f3'
+    });
+    body.insertParagraph(1, '');
+  }
+  
+  const entries = [...newEntries];
+  for (const entry of entries) {
+    const row = table.insertTableRow(1);
+    row.appendTableCell(entry.date);
+    row.appendTableCell(entry.name);
+  }
+  
+  doc.saveAndClose();
+}
+
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 function getFolderIdByName_(name) {
@@ -299,7 +338,6 @@ function getFolderIdByName_(name) {
 }
 
 function extractParticipants_(text) {
-  // Capturer la ligne d'en-tête + les lignes suivantes non vides (liste multi-lignes)
   const match = text.match(/(?:Participants|Attendees|Présents)\s*:\s*([^\n]*)(\n(?!\n)[^\n]+)*/i);
   if (!match) return null;
 
@@ -307,10 +345,10 @@ function extractParticipants_(text) {
 
   const entries = raw.split(/[\n,;]+/)
     .map(s => s
-      .replace(/<[^>]+>/g, '')              // supprimer <email@domain.com>
-      .replace(/\([^)]*@[^)]*\)/g, '')      // supprimer (email@domain.com)
-      .replace(/\b[\w.+-]+@[\w.-]+\.\w+\b/g, '') // supprimer emails nus
-      .replace(/^[-•*]\s*/, '')             // supprimer puces
+      .replace(/<[^>]+>/g, '')
+      .replace(/\([^)]*@[^)]*\)/g, '')
+      .replace(/\b[\w.+-]+@[\w.-]+\.\w+\b/g, '')
+      .replace(/^[-•*]\s*/, '')
       .trim()
     )
     .filter(s => s.length > 0);
@@ -320,13 +358,13 @@ function extractParticipants_(text) {
 
 function cleanGeminiText_(text) {
   return text
-    .replace(/(?:Participants|Attendees|Présents)\s*:.*?(?=\n\n|\n[A-Z]|$)/is, '') // bloc participants
+    .replace(/(?:Participants|Attendees|Présents)\s*:.*?(?=\n\n|\n[A-Z]|$)/is, '')
     .replace(/Notes\s+(?:par|by|generated by)\s+Gemini[^\n]*/gi, '')
-    .replace(/^#{1,6}\s*/gm, '')            // en-têtes markdown
-    .replace(/\*\*(.*?)\*\*/g, '$1')        // gras markdown
-    .replace(/\*(.*?)\*/g, '$1')            // italique markdown
-    .replace(/[ \t]{2,}/g, ' ')             // espaces multiples
-    .replace(/\n{3,}/g, '\n\n')             // sauts de ligne excessifs
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -356,8 +394,6 @@ function showAlert_(msg) {
   try { DocumentApp.getUi().alert(msg); } catch (e) {}
 }
 
-// ─── EXPORT FICHIER ───────────────────────────────────────────────────────────
-
 function exportFileAsText_(fileId) {
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text%2Fplain`;
   const response = UrlFetchApp.fetch(url, {
@@ -370,8 +406,6 @@ function exportFileAsText_(fileId) {
   return response.getContentText();
 }
 
-// ─── API RETRY (backoff exponentiel) ──────────────────────────────────────────
-
 function apiCall_(fn) {
   let lastError;
   for (let attempt = 0; attempt < CONFIG.MAX_RETRIES; attempt++) {
@@ -380,7 +414,7 @@ function apiCall_(fn) {
     } catch (e) {
       lastError = e;
       if (attempt < CONFIG.MAX_RETRIES - 1) {
-        const delay = Math.pow(2, attempt) * 500; // 500ms → 1s → 2s
+        const delay = Math.pow(2, attempt) * 500;
         console.warn(`API erreur (tentative ${attempt + 1}/${CONFIG.MAX_RETRIES}) : ${e.message}. Retry dans ${delay}ms`);
         Utilities.sleep(delay);
       }
