@@ -15,7 +15,7 @@ Ce document maître sert de "cerveau cumulatif" pour **NotebookLM**, vous permet
 ### ✨ Fonctionnalités Modernisées (V8)
 * ✅ **Support du moteur V8** : Utilise le JavaScript moderne (ES6+).
 * ✅ **Dédoublonnage Illimité** : Utilise les métadonnées des fichiers (description) au lieu des propriétés de script limitées (pas de limite de 9 Ko).
-* ✅ **Scopes Explicites** : Inclut `appsscript.json` pour une autorisation simplifiée.
+* ✅ **Scopes Explicites** : Inclut `appsscript.json` for une autorisation simplifiée.
 * ✅ **API Drive v3** : Utilise l'API avancée pour des exports de documents fiables.
 * ✅ **Auto-archivage** : Gère automatiquement la taille du document maître.
 * ✅ **Notifications** : Rapport par e-mail après chaque synchronisation.
@@ -70,6 +70,16 @@ Ce document maître sert de "cerveau cumulatif" pour **NotebookLM**, vous permet
 3. **(Optionnel) Déployer le Dashboard** :
     * Cliquez sur **Déployer** > **Nouveau déploiement** > **Application Web**.
     * Copiez l'URL pour accéder à votre suivi en direct.
+
+---
+
+## ❓ Dépannage
+
+### Le menu "🚀 NotebookLM" n'apparaît pas
+Le menu n'apparaît que si le script est **lié au document** (container-bound). Au lieu de créer le script depuis `script.google.com`, ouvrez votre Master Doc et allez dans **Extensions > Apps Script**. Collez le code ici, enregistrez et actualisez la page du document.
+
+### Erreur "Unexpected error" dans les journaux
+Google Apps Script échoue parfois à appliquer les styles de titres (H2, H3) sur les documents volumineux. Le script inclut une sécurité qui utilisera du texte en **Gras** à la place si cela se produit. Cela n'arrête pas le processus de synchronisation.
 
 ---
 

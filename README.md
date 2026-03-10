@@ -77,6 +77,16 @@ This master document serves as a "compounding brain" for **NotebookLM**, allowin
 
 ---
 
+## ❓ Troubleshooting
+
+### The "🚀 NotebookLM" menu does not appear
+The menu only appears if the script is **container-bound**. Instead of creating the script from `script.google.com`, open your Master Doc and go to **Extensions > Apps Script**. Paste the code there, save, and refresh the document page.
+
+### "Unexpected error" in logs
+Google Apps Script sometimes fails to apply semantic headings (H2, H3) on large documents. The script includes a fallback that will use **Bold** text instead of a true heading if this happens. This does not stop the synchronization process.
+
+---
+
 ## 🧠 Using with NotebookLM
 
 1. Open [NotebookLM](https://notebooklm.google.com).
