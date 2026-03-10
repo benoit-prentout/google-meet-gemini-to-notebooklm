@@ -1,5 +1,7 @@
 # Google Meet Gemini Notes → NotebookLM Sync (Modernized)
 
+[English](README.md) | [Français](README_FR.md)
+
 Automate the consolidation of **Google Meet “Notes by Gemini”** into a single **Master Google Doc**, creating a durable, enterprise-safe knowledge source for **NotebookLM**.
 
 ---
