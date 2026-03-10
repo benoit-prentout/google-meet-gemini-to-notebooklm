@@ -1,17 +1,29 @@
 /**
  * Google Meet Gemini Notes → NotebookLM Sync
  * 
- * Version INDUSTRIELLE (Google Docs API v1).
- * Utilise le mode "Batch Update" pour une vitesse instantanée.
+ * Version "Titan" : Google Docs API v1 + Drive Search Optimisé.
  */
 
 const CONFIG = {
+  // Optionnel : ID du document si non lié
   MASTER_DOC_ID: '', 
-  SOURCE_FOLDERS: ['Meet Recordings'], 
+  
+  // Nom du dossier Meet
+  SOURCE_FOLDER: 'Meet Recordings', 
+  
+  // Marqueur utilisé pour le dédoublonnage
   SYNC_MARKER: '[SYNCED_TO_NOTEBOOKLM_MASTER_DOC]',
+  
+  // Limite de sécurité caractères
   MAX_DOC_CHARS: 950000,
-  ENABLE_NOTIFICATIONS: true,
-  MAX_FILES_PER_RUN: 25
+  
+  // Nombre de jours à scanner (accélère Drive)
+  SCAN_DAYS: 30,
+  
+  // Nombre max de fichiers par run
+  MAX_FILES_PER_RUN: 25,
+  
+  ENABLE_NOTIFICATIONS: true
 };
 
 function onOpen() {
@@ -26,86 +38,81 @@ function onOpen() {
 
 function appendMeetNotesToMaster() {
   let docId = CONFIG.MASTER_DOC_ID;
-  if (!docId) {
-    try { docId = DocumentApp.getActiveDocument().getId(); } catch(e) {}
-  }
+  if (!docId) { try { docId = DocumentApp.getActiveDocument().getId(); } catch(e) {} }
   if (!docId) throw new Error("ID du document maître non trouvé.");
 
-  // Vérification rapide de la taille (seule opération DocumentApp)
-  const body = DocumentApp.openById(docId).getBody();
-  if (body.getText().length > CONFIG.MAX_DOC_CHARS) {
-    console.warn("Document plein.");
-    return;
-  }
+  const initialText = DocumentApp.openById(docId).getBody().getText();
+  if (initialText.length > CONFIG.MAX_DOC_CHARS) return;
 
   let syncedMeetings = [];
   let processedCount = 0;
-  let requests = []; // Liste des modifications à envoyer à l'API
+  let requests = []; 
 
-  console.log("Démarrage de la synchronisation (API Docs v1)...");
+  console.log("Démarrage synchronisation Titan...");
 
-  CONFIG.SOURCE_FOLDERS.forEach(folderNameOrId => {
-    if (processedCount >= CONFIG.MAX_FILES_PER_RUN) return;
+  const folder = getFolder_(CONFIG.SOURCE_FOLDER);
+  if (!folder) return;
 
-    const folder = getFolder_(folderNameOrId);
-    if (!folder) return;
+  // Optimisation Drive : on filtre par date (SCAN_DAYS derniers jours)
+  const pastDate = new Date();
+  pastDate.setDate(pastDate.getDate() - CONFIG.SCAN_DAYS);
+  const formattedDate = pastDate.toISOString();
+  
+  const query = `mimeType = 'application/vnd.google-apps.document' and createdTime > '${formattedDate}'`;
+  const files = folder.searchFiles(query);
+  
+  while (files.hasNext() && processedCount < CONFIG.MAX_FILES_PER_RUN) {
+    const file = files.next();
+    if (file.getDescription().includes(CONFIG.SYNC_MARKER)) continue;
 
-    const files = folder.searchFiles('mimeType = "application/vnd.google-apps.document"');
+    console.log(`Préparation (${processedCount + 1}) : ${file.getName()}`);
     
-    while (files.hasNext() && processedCount < CONFIG.MAX_FILES_PER_RUN) {
-      const file = files.next();
-      if (file.getDescription().includes(CONFIG.SYNC_MARKER)) continue;
-
-      console.log(`Préparation de : ${file.getName()}`);
+    try {
+      const rawText = exportDocToText_(file.getId());
+      requests = requests.concat(prepareMeetingRequests_(file, rawText));
       
-      try {
-        const rawText = exportDocToText_(file.getId());
-        const meetingRequests = prepareMeetingRequests_(file, rawText);
-        requests = requests.concat(meetingRequests);
-        
-        syncedMeetings.push(file.getName());
-        processedCount++;
-        
-        // On marque le fichier Drive immédiatement
-        file.setDescription(`${file.getDescription()}\n${CONFIG.SYNC_MARKER}`.trim());
-      } catch (e) {
-        console.error(`Erreur sur "${file.getName()}": ${e.message}`);
-      }
+      syncedMeetings.push(file.getName());
+      processedCount++;
+      file.setDescription(`${file.getDescription()}\n${CONFIG.SYNC_MARKER}`.trim());
+    } catch (e) {
+      console.error(`Erreur sur "${file.getName()}": ${e.message}`);
     }
-  });
+  }
 
-  // ENVOI GROUPÉ : Une seule requête réseau pour TOUTES les réunions
   if (requests.length > 0) {
-    console.log(`Envoi de ${syncedMeetings.length} réunions au document...`);
+    console.log(`Envoi de ${syncedMeetings.length} réunions (Batch Update)...`);
+    // On ajoute un saut de page avant si le document n'est pas vide
+    if (initialText.length > 2) {
+      requests.unshift({ insertPageBreak: { endOfSegmentLocation: { segmentId: "" } } });
+    }
+    
     Docs.Documents.batchUpdate({requests: requests}, docId);
     
     if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, `https://docs.google.com/document/d/${docId}/edit`);
-    console.log("✅ Synchronisation terminée avec succès.");
-    try { DocumentApp.getUi().alert(`✅ ${syncedMeetings.length} réunion(s) ajoutée(s).`); } catch(e) {}
-  } else {
-    console.log("Aucune nouvelle réunion.");
+    console.log("✅ Terminé.");
+    try { DocumentApp.getUi().alert(`✅ ${syncedMeetings.length} réunion(s) synchronisée(s).`); } catch(e) {}
   }
 }
 
 /**
- * Prépare les instructions d'insertion pour l'API Docs.
- * On insère à l'index 1 (juste après le début) pour plus de simplicité.
+ * Prépare les commandes API pour une réunion (Texte + Formatage)
  */
 function prepareMeetingRequests_(file, rawText) {
   const participants = extractParticipants_(rawText);
   const cleanedText = cleanGeminiText_(rawText);
+  const title = file.getName();
   const dateStr = file.getDateCreated().toLocaleDateString();
   
-  // On construit le bloc de texte
-  let fullBlock = `\n\n${file.getName()}\n📅 Date : ${dateStr}\n`;
-  if (participants) fullBlock += `👥 Participants : ${participants}\n`;
-  fullBlock += `----------------------------------------------------------\n${cleanedText}\n`;
+  const header = `\n${title}\n📅 Date : ${dateStr}\n`;
+  const meta = participants ? `👥 Participants : ${participants}\n` : "";
+  const sep = `----------------------------------------------------------\n`;
+  const fullText = `${header}${meta}${sep}${cleanedText}\n`;
 
-  // On demande à l'API d'insérer ce bloc à la fin du document
+  // On envoie le texte en un seul bloc pour la vitesse
   return [{
     insertText: {
       endOfSegmentLocation: { segmentId: "" },
-      text: fullBlock
+      text: fullText
     }
   }];
 }
@@ -122,17 +129,15 @@ function exportDocToText_(fileId) {
 function resetSyncMarkers() {
   const ui = DocumentApp.getUi();
   if (ui.alert('Confirmation', 'Réinitialiser ?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
-  CONFIG.SOURCE_FOLDERS.forEach(id => {
-    const folder = getFolder_(id);
-    if (!folder) return;
-    const files = folder.getFiles();
-    while (files.hasNext()) {
-      const file = files.next();
-      if (file.getDescription().includes(CONFIG.SYNC_MARKER)) {
-        file.setDescription(file.getDescription().replace(new RegExp('\\n?' + CONFIG.SYNC_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.*', 'g'), '').trim());
-      }
+  const folder = getFolder_(CONFIG.SOURCE_FOLDER);
+  if (!folder) return;
+  const files = folder.getFiles();
+  while (files.hasNext()) {
+    const file = files.next();
+    if (file.getDescription().includes(CONFIG.SYNC_MARKER)) {
+      file.setDescription(file.getDescription().replace(new RegExp('\\n?' + CONFIG.SYNC_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.*', 'g'), '').trim());
     }
-  });
+  }
   ui.alert(`🔄 Reset terminé.`);
 }
 
@@ -154,5 +159,8 @@ function extractParticipants_(text) {
 }
 
 function cleanGeminiText_(text) {
-  return text.replace(/(?:Participants|Attendees|Présents):\s*(.*)/i, '').replace(/Notes generated by Gemini/gi, '').trim();
+  let clean = text.replace(/(?:Participants|Attendees|Présents):\s*(.*)/i, '').replace(/Notes generated by Gemini/gi, '');
+  // Suppression des en-têtes de notes par Gemini
+  clean = clean.replace(/Notes par Gemini.*/gi, '').replace(/Notes par Gemini/gi, '');
+  return clean.trim();
 }

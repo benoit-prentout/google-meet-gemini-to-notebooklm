@@ -1,7 +1,12 @@
 {
-  "timeZone": "GMT",
+  "timeZone": "Europe/Paris",
   "dependencies": {
     "enabledAdvancedServices": [
+      {
+        "userSymbol": "Docs",
+        "serviceId": "docs",
+        "version": "v1"
+      },
       {
         "userSymbol": "Drive",
         "serviceId": "drive",
@@ -11,12 +16,8 @@
   },
   "exceptionLogging": "STACKDRIVER",
   "runtimeVersion": "V8",
-  "oauthScopes": [
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/script.external_request",
-    "https://www.googleapis.com/auth/script.storage",
-    "https://www.googleapis.com/auth/script.send_mail",
-    "https://www.googleapis.com/auth/userinfo.email"
-  ]
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "MYSELF"
+  }
 }
