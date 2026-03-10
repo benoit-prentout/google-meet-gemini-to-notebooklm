@@ -1,20 +1,13 @@
 /**
- * Google Meet Gemini Notes → NotebookLM Sync (Titan v2)
+ * Google Meet Gemini Notes → NotebookLM Sync (Titan v3)
  * 
- * VERSION HAUTE PERFORMANCE : Utilise exclusivement les APIs Drive et Docs JSON.
- * Gère le dédoublonnage via des métadonnées cachées (AppProperties).
+ * VERSION ULTIME : 100% API JSON. 
+ * Performance maximale : Élimination totale de DocumentApp pendant la synchro.
  */
 
 const CONFIG = {
-  // Nom du dossier Meet
   SOURCE_FOLDER_NAME: 'Meet Recordings', 
-  
-  // Limite caractères (Google Doc ~1M)
-  MAX_DOC_CHARS: 950000,
-  
-  // Nombre max de fichiers par run (pour éviter timeout)
-  MAX_FILES_PER_RUN: 25,
-  
+  MAX_FILES_PER_RUN: 20,
   ENABLE_NOTIFICATIONS: true
 };
 
@@ -29,117 +22,87 @@ function onOpen() {
 }
 
 /**
- * Fonction ultra-rapide utilisant les APIs avancées.
+ * Synchronisation Ultra-Rapide
  */
 function appendMeetNotesToMaster() {
-  const doc = DocumentApp.getActiveDocument();
-  if (!doc) throw new Error("Document non trouvé (ce script doit être lié au document).");
-  
-  const docId = doc.getId();
-  const initialText = doc.getBody().getText();
-  if (initialText.length > CONFIG.MAX_DOC_CHARS) return;
+  const docId = DocumentApp.getActiveDocument().getId();
+  console.time("Synchro Totale");
 
+  // 1. Trouver le dossier
   const folderId = getFolderIdByName_(CONFIG.SOURCE_FOLDER_NAME);
-  if (!folderId) return;
+  if (!folderId) throw new Error("Dossier source non trouvé.");
 
-  // REQUÊTE NÉGATIVE : On demande uniquement les fichiers PAS ENCORE synchronisés
-  // 'appProperties/synced != "true"' est extrêmement rapide
+  // 2. Chercher les fichiers non synchronisés (Recherche indexée Google = Instantané)
   const query = `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.document' and appProperties/synced != 'true'`;
   const result = Drive.Files.list({ q: query, pageSize: CONFIG.MAX_FILES_PER_RUN, fields: "files(id, name, createdTime)" });
 
   if (!result.files || result.files.length === 0) {
-    console.log("Aucun nouveau fichier à synchroniser.");
+    console.log("Aucune nouvelle réunion.");
+    try { DocumentApp.getUi().alert("Tout est déjà à jour !"); } catch(e) {}
     return;
   }
 
-  console.log(`Préparation de ${result.files.length} fichiers...`);
-  
+  let requests = [];
   let syncedNames = [];
-  let requests = []; // Liste des commandes BatchUpdate pour l'API Docs
 
+  // 3. Traitement des fichiers
   for (const file of result.files) {
     try {
-      console.log(`Extraction texte : ${file.name}`);
-      const text = exportDocToText_(file.id);
+      console.log(`Extraction : ${file.name}`);
+      const rawText = Drive.Files.export(file.id, 'text/plain').getContentText();
       
-      // On prépare l'insertion
-      requests = requests.concat(prepareDocsBatchRequests_(file, text));
+      const participants = extractParticipants_(rawText);
+      const cleanText = cleanGeminiText_(rawText);
+      const date = new Date(file.createdTime).toLocaleDateString();
       
-      // On marque le fichier comme "synced" via une propriété cachée
+      const block = `\n\n${file.name}\n📅 Date : ${date}\n${participants ? '👥 Participants : ' + participants + '\n' : ''}----------------------------------------------------------\n${cleanText}\n`;
+
+      // Insertion à l'index 1 (Début du doc) -> Beaucoup plus rapide sur gros docs
+      requests.push({
+        insertText: {
+          location: { index: 1 },
+          text: block
+        }
+      });
+
+      // Marquage immédiat (Propriété cachée)
       Drive.Files.update({ appProperties: { synced: "true" } }, file.id);
-      
       syncedNames.push(file.name);
     } catch (e) {
-      console.error(`Erreur sur "${file.name}": ${e.message}`);
+      console.error(`Erreur sur ${file.name}: ${e.message}`);
     }
   }
 
+  // 4. Envoi groupé (Batch Update)
   if (requests.length > 0) {
-    // On ajoute un saut de page si le doc n'est pas vide
-    if (initialText.length > 2) {
-      requests.unshift({ insertPageBreak: { endOfSegmentLocation: { segmentId: "" } } });
-    }
-
-    console.log("Envoi du lot au document (BatchUpdate)...");
+    console.log("Envoi au document...");
     Docs.Documents.batchUpdate({ requests: requests }, docId);
     
-    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedNames, doc.getUrl());
-    try { DocumentApp.getUi().alert(`✅ ${syncedNames.length} réunion(s) synchronisée(s).`); } catch(e) {}
+    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedNames, `https://docs.google.com/document/d/${docId}/edit`);
+    console.timeEnd("Synchro Totale");
+    try { DocumentApp.getUi().alert(`✅ ${syncedNames.length} réunion(s) ajoutée(s) au début du document.`); } catch(e) {}
   }
 }
 
 /**
- * Prépare les commandes JSON pour l'API Docs v1.
- */
-function prepareDocsBatchRequests_(file, text) {
-  const date = new Date(file.createdTime).toLocaleDateString();
-  const participants = extractParticipants_(text);
-  const cleanText = cleanGeminiText_(text);
-  
-  const header = `\n${file.name}\n📅 Date : ${date}\n`;
-  const meta = participants ? `👥 Participants : ${participants}\n` : "";
-  const sep = `----------------------------------------------------------\n`;
-  const fullBlock = `${header}${meta}${sep}${cleanText}\n`;
-
-  return [{
-    insertText: {
-      endOfSegmentLocation: { segmentId: "" },
-      text: fullBlock
-    }
-  }];
-}
-
-/**
- * Export ultra-rapide via Drive API.
- */
-function exportDocToText_(fileId) {
-  return Drive.Files.export(fileId, 'text/plain', { fields: "body" }).getContentText();
-}
-
-/**
- * Réinitialise les métadonnées (Reset).
+ * Reset complet de l'état de synchronisation
  */
 function resetSyncProperties() {
   const ui = DocumentApp.getUi();
-  if (ui.alert('Confirmation', 'Réinitialiser l\'état ? Tout sera ré-importé.', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  if (ui.alert('Confirmation', 'Voulez-vous tout ré-importer ?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
 
   const folderId = getFolderIdByName_(CONFIG.SOURCE_FOLDER_NAME);
-  const query = `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.document'`;
-  const files = Drive.Files.list({ q: query, fields: "files(id, name)" }).files;
+  const files = Drive.Files.list({ q: `'${folderId}' in parents`, fields: "files(id)" }).files;
 
   for (const file of files) {
     Drive.Files.update({ appProperties: { synced: "false" } }, file.id);
   }
-  ui.alert(`🔄 Réinitialisation terminée.`);
+  ui.alert("🔄 Prêt pour ré-importation.");
 }
 
-/**
- * Helpers API.
- */
 function getFolderIdByName_(name) {
-  const q = `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-  const result = Drive.Files.list({ q: q, fields: "files(id)" });
-  return result.files && result.files.length > 0 ? result.files[0].id : null;
+  const res = Drive.Files.list({ q: `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`, fields: "files(id)" });
+  return res.files && res.files.length > 0 ? res.files[0].id : null;
 }
 
 function extractParticipants_(text) {
@@ -156,5 +119,5 @@ function cleanGeminiText_(text) {
 
 function sendNotification_(meetings, url) {
   const email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
-  MailApp.sendEmail(email, `✅ Synchro NotebookLM (${meetings.length})`, `Réunions ajoutées :\n\n- ${meetings.join('\n- ')}\n\nLien : ${url}`);
+  MailApp.sendEmail(email, `✅ Synchro NotebookLM (${meetings.length})`, `Réunions ajoutées :\n\n- ${meetings.join('\n- ')}\n\nDoc : ${url}`);
 }
