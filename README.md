@@ -54,21 +54,24 @@ This master document serves as a "compounding brain" for **NotebookLM**, allowin
 3. Add a new property:
    * **Property**: `MASTER_DOC_ID`
    * **Value**: Paste your Master Doc ID here.
+4. (Optional) In `Code.gs`, update `SOURCE_FOLDERS` if you want to sync from multiple folders.
 
 ### 4️⃣ Authorize & Automate
 1. **Force Authorization**: 
    - Select `appendMeetNotesToMaster` in the toolbar and click **Run**.
-   - Click **Review Permissions**.
-   - Select your Google account.
-   - On the "Google hasn't verified this app" screen, click **Advanced** > **Go to [Project Name] (unsafe)**.
-   - Click **Allow**.
+   - Click **Review Permissions** and follow the screens to **Allow**.
 2. **Set the Trigger**:
    - Go to **Triggers** (alarm clock icon ⏰).
    - Click **Add Trigger**.
    - Function: `appendMeetNotesToMaster`
    - Event source: `Time-driven`
    - Type: `Minutes timer`
-   - Interval: `Every 15 minutes` (or your preference).
+   - Interval: `Every 15 minutes`.
+3. **(Optional) Deploy Dashboard**:
+   - Click **Deploy** > **New Deployment**.
+   - Select **Web App**.
+   - Set "Execute as" to **Me** and "Who has access" to **Only myself**.
+   - Click **Deploy** and copy the URL to view your status dashboard.
 
 ---
 
