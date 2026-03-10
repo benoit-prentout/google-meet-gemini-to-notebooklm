@@ -15,7 +15,8 @@ const CONFIG = {
   MAX_DOC_CHARS: 850000, 
   SYNC_MARKER: '[SYNCED_TO_NOTEBOOKLM_MASTER_DOC]',
   ENABLE_NOTIFICATIONS: true,
-  NOTIFICATION_EMAIL: Session.getActiveUser().getEmail()
+  // Removed dynamic call from global scope to avoid permission errors
+  NOTIFICATION_EMAIL: '' 
 };
 
 /**
@@ -37,11 +38,12 @@ function onOpen() {
 function appendMeetNotesToMaster() {
   let masterDocId = PropertiesService.getScriptProperties().getProperty('MASTER_DOC_ID') || CONFIG.MASTER_DOC_ID;
 
+  // Try to auto-detect if we're in a container-bound script
   if (masterDocId === 'YOUR_MASTER_DOC_ID_HERE' || !masterDocId) {
-    if (typeof DocumentApp !== 'undefined' && DocumentApp.getActiveDocument()) {
+    try {
       masterDocId = DocumentApp.getActiveDocument().getId();
-    } else {
-      console.error('Master Doc ID not set.');
+    } catch (e) {
+      console.error('Master Doc ID not set and could not be auto-detected.');
       return;
     }
   }
@@ -79,11 +81,11 @@ function appendMeetNotesToMaster() {
   if (syncedMeetings.length > 0) {
     if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, masterDoc.getUrl());
     const msg = `✅ ${syncedMeetings.length} réunions synchronisées !`;
-    if (typeof DocumentApp !== 'undefined') DocumentApp.getUi().alert(msg);
+    if (isUiAvailable_()) DocumentApp.getUi().alert(msg);
     console.log(msg);
   } else {
     const msg = 'Terminé : Aucune nouvelle réunion à synchroniser.';
-    if (typeof DocumentApp !== 'undefined') DocumentApp.getUi().alert(msg);
+    if (isUiAvailable_()) DocumentApp.getUi().alert(msg);
     console.log(msg);
   }
 
@@ -92,10 +94,9 @@ function appendMeetNotesToMaster() {
 
 /**
  * RESET FUNCTION: Removes the [SYNCED] marker from all files in source folders.
- * Use this if you want to re-import everything after clearing your Master Doc.
  */
 function resetSyncMarkers() {
-  const ui = (typeof DocumentApp !== 'undefined') ? DocumentApp.getUi() : null;
+  const ui = isUiAvailable_() ? DocumentApp.getUi() : null;
   if (ui) {
     const response = ui.alert('Confirmation', 'Voulez-vous vraiment réinitialiser les marqueurs de synchronisation ? Tous vos anciens comptes-rendus seront ré-importés lors du prochain scan.', ui.ButtonSet.YES_NO);
     if (response !== ui.Button.YES) return;
@@ -124,6 +125,61 @@ function resetSyncMarkers() {
 }
 
 /**
+ * Piste 2: Create a new Master Doc when the current one is full.
+ */
+function rotateMasterDoc_(oldDoc) {
+  const oldName = oldDoc.getName();
+  const newName = `${oldName} (Continued ${new Date().toLocaleDateString()})`;
+  const newDoc = DocumentApp.create(newName);
+  const newId = newDoc.getId();
+  
+  PropertiesService.getScriptProperties().setProperty('MASTER_DOC_ID', newId);
+  
+  if (CONFIG.ENABLE_NOTIFICATIONS) {
+    const email = getNotificationEmail_();
+    MailApp.sendEmail(email, 
+      "⚠️ NotebookLM Sync: New Master Doc Created", 
+      `The previous Master Doc reached its size limit.\nA new one has been created: ${newDoc.getUrl()}`);
+  }
+  
+  return newId;
+}
+
+/**
+ * Piste 4: Send Email summary
+ */
+function sendNotification_(meetings, docUrl) {
+  const email = getNotificationEmail_();
+  const subject = `✅ Sync Complete: ${meetings.length} new meeting(s) added`;
+  const body = `The following meetings have been added to your Master Doc:\n\n- ${meetings.join('\n- ')}\n\nView: ${docUrl}`;
+  MailApp.sendEmail(email, subject, body);
+}
+
+/**
+ * Get notification email safely
+ */
+function getNotificationEmail_() {
+  if (CONFIG.NOTIFICATION_EMAIL) return CONFIG.NOTIFICATION_EMAIL;
+  try {
+    return Session.getActiveUser().getEmail();
+  } catch (e) {
+    return Session.getEffectiveUser().getEmail();
+  }
+}
+
+/**
+ * Check if UI is available (not a background trigger)
+ */
+function isUiAvailable_() {
+  try {
+    DocumentApp.getUi();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * Internal helper to find folder by ID or Name
  */
 function getFolder_(folderNameOrId) {
@@ -136,26 +192,6 @@ function getFolder_(folderNameOrId) {
   }
   if (!folder) console.warn(`Folder not found: ${folderNameOrId}`);
   return folder;
-}
-
-/**
- * Piste 2: Create a new Master Doc when the current one is full.
- */
-function rotateMasterDoc_(oldDoc) {
-  const oldName = oldDoc.getName();
-  const newName = `${oldName} (Continued ${new Date().toLocaleDateString()})`;
-  const newDoc = DocumentApp.create(newName);
-  const newId = newDoc.getId();
-  
-  PropertiesService.getScriptProperties().setProperty('MASTER_DOC_ID', newId);
-  
-  if (CONFIG.ENABLE_NOTIFICATIONS) {
-    MailApp.sendEmail(CONFIG.NOTIFICATION_EMAIL, 
-      "⚠️ NotebookLM Sync: New Master Doc Created", 
-      `The previous Master Doc reached its size limit.\nA new one has been created: ${newDoc.getUrl()}`);
-  }
-  
-  return newId;
 }
 
 /**
@@ -184,15 +220,6 @@ function processMeeting_(file, rawText, body) {
   });
 
   file.setDescription(`${file.getDescription()}\n${CONFIG.SYNC_MARKER}`.trim());
-}
-
-/**
- * Piste 4: Send Email summary
- */
-function sendNotification_(meetings, docUrl) {
-  const subject = `✅ Sync Complete: ${meetings.length} new meeting(s) added`;
-  const body = `The following meetings have been added to your Master Doc:\n\n- ${meetings.join('\n- ')}\n\nView: ${docUrl}`;
-  MailApp.sendEmail(CONFIG.NOTIFICATION_EMAIL, subject, body);
 }
 
 function extractParticipants_(text) {
