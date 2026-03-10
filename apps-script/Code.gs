@@ -1,64 +1,48 @@
 /**
  * Google Meet Gemini Notes → NotebookLM Sync
  * 
- * Centralise automatiquement vos notes de réunion Gemini dans un Google Doc.
+ * Script lié au document (Extensions > Apps Script).
+ * Centralise les notes Meet Gemini dans ce document.
  */
 
 const CONFIG = {
-  // ID du document maître (laisser vide si le script est lié au document)
-  MASTER_DOC_ID: 'YOUR_MASTER_DOC_ID_HERE', 
-  
   // Nom des dossiers Drive à scanner
   SOURCE_FOLDERS: ['Meet Recordings'], 
   
-  // Limite de caractères avant rotation (~850k)
-  MAX_DOC_CHARS: 850000, 
-  
-  // Marqueur de synchronisation
+  // Marqueur de synchronisation pour éviter les doublons
   SYNC_MARKER: '[SYNCED_TO_NOTEBOOKLM_MASTER_DOC]',
   
+  // Limite de sécurité (Google Doc ~1M caractères)
+  MAX_DOC_CHARS: 900000,
+  
   // Notifications
-  ENABLE_NOTIFICATIONS: true,
-  NOTIFICATION_EMAIL: '' 
+  ENABLE_NOTIFICATIONS: true
 };
 
 /**
- * Menu personnalisé.
- * Note : Apparaît uniquement si le script est lié au document (Extensions > Apps Script).
+ * Menu personnalisé dans le Google Doc.
  */
 function onOpen() {
-  try {
-    DocumentApp.getUi().createMenu('🚀 NotebookLM')
-        .addItem('Sincroniser maintenant', 'appendMeetNotesToMaster')
-        .addSeparator()
-        .addItem('Réinitialiser les marqueurs (Reset)', 'resetSyncMarkers')
-        .addToUi();
-  } catch (e) {}
+  DocumentApp.getUi().createMenu('🚀 NotebookLM')
+      .addItem('Sincroniser maintenant', 'appendMeetNotesToMaster')
+      .addSeparator()
+      .addItem('Réinitialiser les marqueurs (Reset)', 'resetSyncMarkers')
+      .addToUi();
 }
 
 /**
- * Fonction principale.
+ * Fonction principale de synchronisation.
  */
 function appendMeetNotesToMaster() {
-  let masterDocId = PropertiesService.getScriptProperties().getProperty('MASTER_DOC_ID') || CONFIG.MASTER_DOC_ID;
-
-  if (masterDocId === 'YOUR_MASTER_DOC_ID_HERE' || !masterDocId) {
-    try {
-      masterDocId = DocumentApp.getActiveDocument().getId();
-    } catch (e) {
-      console.error('ID du document maître non trouvé.');
-      return;
-    }
-  }
-
-  let masterDoc = DocumentApp.openById(masterDocId);
+  const doc = DocumentApp.getActiveDocument();
+  const body = doc.getBody();
   
-  if (masterDoc.getBody().getText().length > CONFIG.MAX_DOC_CHARS) {
-    masterDocId = rotateMasterDoc_(masterDoc);
-    masterDoc = DocumentApp.openById(masterDocId);
+  // Vérification de la taille
+  if (body.getText().length > CONFIG.MAX_DOC_CHARS) {
+    DocumentApp.getUi().alert("⚠️ Document plein", "Ce document est trop volumineux. Veuillez le renommer (ex: Archive) et en créer un nouveau pour continuer la synchro.", DocumentApp.getUi().ButtonSet.OK);
+    return;
   }
 
-  const body = masterDoc.getBody();
   let syncedMeetings = [];
 
   CONFIG.SOURCE_FOLDERS.forEach(folderNameOrId => {
@@ -81,32 +65,39 @@ function appendMeetNotesToMaster() {
   });
 
   if (syncedMeetings.length > 0) {
-    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, masterDoc.getUrl());
-    if (isUiAvailable_()) DocumentApp.getUi().alert(`✅ ${syncedMeetings.length} réunion(s) ajoutée(s).`);
-  } else if (isUiAvailable_()) {
-    DocumentApp.getUi().alert('Aucune nouvelle réunion.');
+    if (CONFIG.ENABLE_NOTIFICATIONS) sendNotification_(syncedMeetings, doc.getUrl());
+    DocumentApp.getUi().alert(`✅ ${syncedMeetings.length} réunion(s) ajoutée(s).`);
+  } else {
+    DocumentApp.getUi().alert('Aucune nouvelle réunion à synchroniser.');
   }
 }
 
 /**
- * Formate et insère une réunion.
+ * Formate et insère le contenu d'une réunion.
  */
 function processMeeting_(file, rawText, body) {
   const participants = extractParticipants_(rawText);
   const cleanedText = cleanGeminiText_(rawText);
 
+  // Styles de base pour éviter l'héritage du gras/italique
+  const STYLE_NORMAL = {};
+  STYLE_NORMAL[DocumentApp.Attribute.BOLD] = false;
+  STYLE_NORMAL[DocumentApp.Attribute.ITALIC] = false;
+  STYLE_NORMAL[DocumentApp.Attribute.FONT_SIZE] = 11;
+  STYLE_NORMAL[DocumentApp.Attribute.HEADING] = DocumentApp.ParagraphHeading.NORMAL;
+
   if (body.getText().length > 0) body.appendPageBreak();
 
-  // Titre : Création vide puis injection (contourne les bugs Google)
+  // 1. Titre (H2)
   const titlePara = body.appendParagraph('');
   safeSetHeading_(titlePara, DocumentApp.ParagraphHeading.HEADING_2);
   titlePara.setText(file.getName());
 
-  // Date
+  // 2. Date (Italique)
   const datePara = body.appendParagraph(`📅 Date : ${file.getDateCreated().toLocaleDateString()}`);
-  datePara.setItalic(true).setFontSize(10);
+  datePara.setItalic(true).setFontSize(10).setBold(false);
   
-  // Participants
+  // 3. Participants (H3)
   if (participants) {
     const partPara = body.appendParagraph('');
     safeSetHeading_(partPara, DocumentApp.ParagraphHeading.HEADING_3);
@@ -115,19 +106,25 @@ function processMeeting_(file, rawText, body) {
 
   body.appendParagraph('---').setAttributes({HORIZONTAL_ALIGNMENT: DocumentApp.HorizontalAlignment.CENTER});
 
-  // Texte
+  // 4. Corps du texte (Normalisé)
   cleanedText.split('\n').forEach(line => {
     if (line.trim()) {
       const p = body.appendParagraph(line.trim());
-      if (line.trim().length < 60 && (line.includes(':') || line.toUpperCase() === line)) p.setBold(true);
+      p.setAttributes(STYLE_NORMAL); // Force le style propre
+      
+      // Optionnel : Met en gras les lignes qui ressemblent à des sous-titres
+      if (line.trim().length < 60 && (line.includes(':') || line.toUpperCase() === line)) {
+        p.setBold(true);
+      }
     }
   });
 
+  // Marquage Drive
   file.setDescription(`${file.getDescription()}\n${CONFIG.SYNC_MARKER}`.trim());
 }
 
 /**
- * Applique un style de titre avec double sécurité.
+ * Applique un style de titre avec double sécurité (bug Google).
  */
 function safeSetHeading_(para, heading) {
   try {
@@ -138,20 +135,18 @@ function safeSetHeading_(para, heading) {
       style[DocumentApp.Attribute.HEADING] = heading;
       para.setAttributes(style);
     } catch (e2) {
-      // Repli silencieux sur formatage manuel si Google bug
       para.setBold(true);
-      if (heading === DocumentApp.ParagraphHeading.HEADING_2) para.setFontSize(14);
-      if (heading === DocumentApp.ParagraphHeading.HEADING_3) para.setFontSize(12);
+      para.setFontSize(heading === DocumentApp.ParagraphHeading.HEADING_2 ? 14 : 12);
     }
   }
 }
 
 /**
- * Réinitialisation.
+ * Réinitialise les marqueurs pour tout ré-importer.
  */
 function resetSyncMarkers() {
-  const ui = isUiAvailable_() ? DocumentApp.getUi() : null;
-  if (ui && ui.alert('Confirmation', 'Réinitialiser les marqueurs ?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  const ui = DocumentApp.getUi();
+  if (ui.alert('Confirmation', 'Voulez-vous vraiment réinitialiser les marqueurs ?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
 
   let count = 0;
   CONFIG.SOURCE_FOLDERS.forEach(id => {
@@ -161,40 +156,27 @@ function resetSyncMarkers() {
     while (files.hasNext()) {
       const file = files.next();
       if (file.getDescription().includes(CONFIG.SYNC_MARKER)) {
-        file.setDescription(file.getDescription().replace(new RegExp('\\n?' + CONFIG.SYNC_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.*', 'g'), '').trim());
+        const cleanDesc = file.getDescription().replace(new RegExp('\\n?' + CONFIG.SYNC_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '.*', 'g'), '').trim();
+        file.setDescription(cleanDesc);
         count++;
       }
     }
   });
-  if (ui) ui.alert(`🔄 ${count} fichiers réinitialisés.`);
+  ui.alert(`🔄 ${count} fichiers réinitialisés.`);
 }
 
 /**
- * Rotation du document.
+ * Envoie un résumé par e-mail.
  */
-function rotateMasterDoc_(oldDoc) {
-  const newDoc = DocumentApp.create(`${oldDoc.getName()} (Suite ${new Date().toLocaleDateString()})`);
-  const newId = newDoc.getId();
-  PropertiesService.getScriptProperties().setProperty('MASTER_DOC_ID', newId);
-  if (CONFIG.ENABLE_NOTIFICATIONS) {
-    MailApp.sendEmail(getNotificationEmail_(), "⚠️ Sync NotebookLM : Nouveau Doc", `Doc plein. Nouveau : ${newDoc.getUrl()}`);
-  }
-  return newId;
-}
-
 function sendNotification_(meetings, url) {
-  const email = getNotificationEmail_();
-  const body = `Réunions ajoutées :\n\n- ${meetings.join('\n- ')}\n\nLien : ${url}`;
+  const email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  const body = `Réunions ajoutées au Master Doc :\n\n- ${meetings.join('\n- ')}\n\nLien : ${url}`;
   MailApp.sendEmail(email, `✅ Synchro NotebookLM (${meetings.length})`, body);
 }
 
-function getNotificationEmail_() {
-  if (CONFIG.NOTIFICATION_EMAIL) return CONFIG.NOTIFICATION_EMAIL;
-  try { return Session.getActiveUser().getEmail(); } catch (e) { return Session.getEffectiveUser().getEmail(); }
-}
-
-function isUiAvailable_() { try { DocumentApp.getUi(); return true; } catch (e) { return false; } }
-
+/**
+ * Helpers
+ */
 function getFolder_(id) {
   try { return DriveApp.getFolderById(id); } catch(e) {
     const f = DriveApp.getFoldersByName(id);
@@ -217,9 +199,4 @@ function exportGoogleDocAsText_(id) {
   });
   if (r.getResponseCode() !== 200) throw new Error(`API error ${r.getResponseCode()}`);
   return r.getContentText();
-}
-
-function doGet() {
-  const id = PropertiesService.getScriptProperties().getProperty('MASTER_DOC_ID') || CONFIG.MASTER_DOC_ID;
-  return HtmlService.createHtmlOutput(`<h1>📊 Status</h1><p>Doc ID: ${id}</p>`);
 }
