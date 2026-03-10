@@ -10,7 +10,7 @@ const CONFIG = {
   SYNC_MARKER: '[SYNCED_TO_NOTEBOOKLM_MASTER_DOC]',
   MAX_DOC_CHARS: 900000,
   ENABLE_NOTIFICATIONS: true,
-  MAX_FILES_PER_RUN: 10 // Limite pour éviter les timeouts
+  MAX_FILES_PER_RUN: 15 // Augmenté car l'export API est plus rapide
 };
 
 function onOpen() {
@@ -26,13 +26,13 @@ function onOpen() {
 function appendMeetNotesToMaster() {
   let doc = DocumentApp.getActiveDocument();
   if (!doc && CONFIG.MASTER_DOC_ID) doc = DocumentApp.openById(CONFIG.MASTER_DOC_ID);
-  if (!doc) throw new Error("Document non trouvé. Liez le script ou renseignez MASTER_DOC_ID.");
+  if (!doc) throw new Error("Document maître non trouvé.");
 
   const body = doc.getBody();
   let syncedMeetings = [];
   let processedCount = 0;
 
-  console.log("Démarrage de la synchronisation...");
+  console.log("Démarrage de la synchronisation (via Drive Export API)...");
 
   CONFIG.SOURCE_FOLDERS.forEach(folderNameOrId => {
     if (processedCount >= CONFIG.MAX_FILES_PER_RUN) return;
@@ -40,21 +40,17 @@ function appendMeetNotesToMaster() {
     const folder = getFolder_(folderNameOrId);
     if (!folder) return;
 
-    console.log(`Analyse du dossier : ${folder.getName()}`);
-
-    // Recherche optimisée : Uniquement les Google Docs
+    // Recherche uniquement les Google Docs non synchronisés
     const files = folder.searchFiles('mimeType = "application/vnd.google-apps.document"');
     
     while (files.hasNext() && processedCount < CONFIG.MAX_FILES_PER_RUN) {
       const file = files.next();
-      
-      // On saute si déjà synchronisé
       if (file.getDescription().includes(CONFIG.SYNC_MARKER)) continue;
 
-      console.log(`Traitement de : ${file.getName()}...`);
+      console.log(`Exportation texte de : ${file.getName()}`);
       
       try {
-        const rawText = DocumentApp.openById(file.getId()).getBody().getText();
+        const rawText = exportDocToText_(file.getId());
         processMeeting_(file, rawText, body);
         syncedMeetings.push(file.getName());
         processedCount++;
@@ -70,10 +66,25 @@ function appendMeetNotesToMaster() {
     console.log(msg);
     try { DocumentApp.getUi().alert(msg); } catch(e) {}
   } else {
-    const msg = "Aucune nouvelle réunion à synchroniser.";
-    console.log(msg);
-    try { DocumentApp.getUi().alert(msg); } catch(e) {}
+    console.log("Aucune nouvelle réunion.");
   }
+}
+
+/**
+ * Extrait le texte via l'API Drive (plus robuste que DocumentApp.openById)
+ */
+function exportDocToText_(fileId) {
+  const url = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`;
+  const options = {
+    method: "get",
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  };
+  const response = UrlFetchApp.fetch(url, options);
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`Erreur Export API (${response.getResponseCode()})`);
+  }
+  return response.getContentText();
 }
 
 function processMeeting_(file, rawText, body) {
@@ -142,7 +153,7 @@ function resetSyncMarkers() {
       }
     }
   });
-  ui.alert(`🔄 Réinitialisation terminée.`);
+  ui.alert(`🔄 Terminé.`);
 }
 
 function sendNotification_(meetings, url) {
@@ -152,7 +163,6 @@ function sendNotification_(meetings, url) {
 
 function getFolder_(id) {
   try { return DriveApp.getFolderById(id); } catch(e) {
-    console.log(`Recherche du dossier par nom : ${id}`);
     const f = DriveApp.getFoldersByName(id);
     return f.hasNext() ? f.next() : null;
   }
