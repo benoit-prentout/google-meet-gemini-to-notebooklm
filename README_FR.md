@@ -12,7 +12,7 @@ Consolidez automatiquement toutes les **"Notes par Gemini" de vos réunions Goog
 
 La méthode la plus simple est de copier le template pré-configuré :
 
-1. **[Cliquer ici pour faire une copie du template](https://docs.google.com/document/d/1rqPvR9OtdjjCLj82k1J0LdiRfSFsk-fQbQPtcX2CXeQ/copy)**
+1. **[Cliquer ici pour faire une copie du template](https://docs.google.com/document/d/1BL6Mzr5WWqt7OD6ikJXOEVem77ubhrBDeFDy_y3E8R0/copy)**
 2. Dans votre nouveau document, rafraîchissez la page.
 3. Un nouveau menu **🚀 NotebookLM** va apparaître.
 4. Lancez **🔄 Sync Now** et suivez les étapes d'autorisation.
