@@ -1,6 +1,10 @@
 # Google Meet Gemini Notes → NotebookLM Sync
 
-[English](README.md) | [Français](README_FR.md)
+<p align="center">
+  <b>English</b> | <a href="README_FR.md">Français</a>
+</p>
+
+Automatically consolidate all your **Google Meet "Notes by Gemini"** into a single **Master Google Doc**. This tool is designed to create a living, unlimited knowledge base for **NotebookLM**.
 
 ---
 
@@ -17,61 +21,55 @@ The easiest way to use this tool is to copy the pre-configured template:
 
 ## 🏗 Why this tool?
 
-NotebookLM is powerful, but it limits the number of sources you can add. By grouping months of meetings (yours and your team's) into a single "brain" document, you enable the AI to make long-term connections without ever hitting source limits.
+NotebookLM is powerful, but it limits the number of sources you can add (50 sources max). By grouping months of meetings (yours and your team's) into a single "brain" document, you enable the AI to make long-term connections without ever hitting source limits.
 
-### ✨ New Features (v4+)
+### ✨ New Features (v4.1)
 
 * 👥 **Team Support**: Fetches meeting notes organized by your colleagues (files in "Shared with me", "Shared Drives", or files containing "Notes par Gemini").
 * 📊 **Summary Table**: An automatically generated table at the top of your document lists all synced meetings.
+* 📦 **Auto-Archiving**: Automatic archives are created monthly or when the document size reaches the limit.
+* 📧 **Email Notifications**: Receive an email with the link to your new archive as soon as it is created.
 * 🛡️ **Smart Sync**: Works even on files where you only have view-only access.
-* 📦 **Neutral Archives**: Automatic archives are named **"Meeting Notes Archive"** to ensure NotebookLM treats them as historical data sources.
 * ⚡ **Performance**: Uses advanced Google APIs to process 20+ meetings in seconds.
 
 ---
 
 ## 🏗 How it works?
 
-1. **Global Scan**: The script searches for Gemini note variants ("Notes de la réunion", "Notes for", "Notes par Gemini") everywhere on your Drive.
+1. **Global Scan**: The script searches for Gemini note variants ("Notes de la réunion", "Meeting notes", etc.) everywhere on your Drive.
 2. **Filtering**: It ignores already-synced files using an internal script database.
 3. **Cleaning**: It extracts text, removes Gemini-specific metadata, and simplifies Markdown formatting.
 4. **Insertion**: It adds new notes to the top of the doc and updates the summary table.
-5. **Archiving**: If the document gets too large, it creates a timestamped **"Meeting Notes Archive"** and resets.
+5. **Archiving**: Monthly or when full, it creates a **"Meeting Notes Archive"** and resets the master doc.
 
 ---
 
-## 🛠 Setup Guide (Beginners)
+## 🛠 Setup Guide (Manual Install)
 
 ### 1️⃣ Prepare the Master Document
 1. Create a new, empty **Google Doc** (e.g., "Master - Meeting Notes").
 2. Inside this doc, go to the menu **Extensions > Apps Script**.
 
 ### 2️⃣ Copy the Code
-1. Delete everything in the script editor (the `function myFunction() { ... }`).
+1. Delete everything in the script editor.
 2. Copy the entire content of the `apps-script/Code.gs` file from this repository and paste it into the editor.
-3. Save (floppy disk icon) and name the project "Sync NotebookLM".
+3. Save and name the project "Sync NotebookLM".
 
 ### 3️⃣ Configure Google Services
 The script needs direct access to Drive and Docs APIs.
-1. On the left side of the Apps Script editor, click the **+** next to **Services**.
-2. Search for **Google Drive API**, select it, and click **Add**.
-3. Click the **+** again, search for **Google Docs API**, select it, and click **Add**.
+1. In Apps Script editor, click the **+** next to **Services**.
+2. Search for **Google Drive API** (v3) and click **Add**.
+3. Click the **+** again, search for **Google Docs API** (v1) and click **Add**.
 
 ### 4️⃣ First Run & Authorization
-1. In the top toolbar, ensure `appendMeetNotesToMaster` is selected.
-2. Click **Run**.
-3. An authorization window will appear:
-   - Click **Review permissions**.
-   - Choose your Google account.
-   - If a "Google hasn't verified this app" message appears: click **Advanced** then **Go to Sync NotebookLM (unsafe)**.
-   - Click **Allow**.
-4. Go back to your Google Doc and refresh the page. A new **🚀 NotebookLM** menu will appear!
+1. In the top toolbar, ensure `appendMeetNotesToMaster` is selected and click **Run**.
+2. An authorization window will appear: follow the prompts to **Allow** the script.
+3. Go back to your Google Doc and refresh the page. A new **🚀 NotebookLM** menu will appear!
 
 ### 5️⃣ Automation (Easiest Method)
 To have the sync run automatically every 15 minutes:
 1. In your Google Doc, go to the menu **🚀 NotebookLM > ⏰ Enable Auto-Sync**.
 2. That's it! The script will now run in the background.
-
-*Note: You can also set up manual triggers in the Apps Script editor if you prefer different intervals.*
 
 ---
 
@@ -80,10 +78,11 @@ To have the sync run automatically every 15 minutes:
 | Option | Description |
 |---|---|
 | **🔄 Sync Now** | Forces an immediate sync of the latest meetings. |
+| **⏰ Enable Auto-Sync** | Activates the 15-minute background synchronization. |
 | **📜 View Sync History** | Displays a log of recent synchronization runs. |
 | **📦 Archive Document Now** | Manually empty the master doc and create a timestamped archive. |
-| **🧹 Reset Sync State** | Useful if you want to re-import everything from scratch by clearing the local database. |
-| **❓ Help & Setup** | Shows instructions and quick tips. |
+| **🧹 Reset Sync State** | Useful if you want to re-import everything from scratch. |
+| **❓ Start Here / Help** | Shows instructions and quick tips. |
 
 ---
 
@@ -92,7 +91,8 @@ To have the sync run automatically every 15 minutes:
 1. Go to [NotebookLM](https://notebooklm.google.com).
 2. Create a new Notebook.
 3. Add your **Master Google Doc** as a source.
-4. **Important**: Every time you use NotebookLM, click the **Refresh** button next to the Google Doc source so it picks up the latest meetings added by the script.
+4. **Important**: Every time you use NotebookLM, click the **Refresh** button next to the Google Doc source so it picks up the latest meetings.
+5. **Archives**: When an archive is created, don't forget to add the archive file as a source in NotebookLM to keep your full history!
 
 ---
 
