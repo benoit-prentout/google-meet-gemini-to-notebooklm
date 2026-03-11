@@ -110,6 +110,10 @@ function insertWelcomeContent() {
   const footer = body.appendParagraph('Note: You can delete these instructions once you are set up. Your meeting notes will appear below the summary table.');
   footer.setItalic(true);
   footer.setAttributes({[DocumentApp.Attribute.FOREGROUND_COLOR]: '#70757a'});
+
+  const github = body.appendParagraph('Star this project on GitHub');
+  github.setLinkUrl('https://github.com/benoit-prentout/google-meet-gemini-to-notebooklm');
+  github.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
   
   doc.saveAndClose();
 }
@@ -132,6 +136,10 @@ function showHelp() {
 
       <p style="font-size: 0.9em;"><b>Pro Tip:</b> Add this document to a <a href="https://notebooklm.google.com" target="_blank">NotebookLM</a> notebook and remember to <b>Refresh</b> the source after syncing!</p>
       
+      <div style="text-align: center; margin: 15px 0;">
+        <a href="https://github.com/benoit-prentout/google-meet-gemini-to-notebooklm" target="_blank" style="background: #1a73e8; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 0.9em;">⭐ View on GitHub</a>
+      </div>
+
       <hr style="border: 0; border-top: 1px solid #e8eaed; margin: 15px 0;">
       <div style="font-size: 0.8em; color: #70757a; text-align: center;">v4.1 • 100% English • MIT License</div>
     </div>
