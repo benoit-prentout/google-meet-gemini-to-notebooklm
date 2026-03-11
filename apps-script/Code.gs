@@ -33,21 +33,20 @@ function onOpen() {
   try {
     const ui = DocumentApp.getUi();
     ui.createMenu('🚀 NotebookLM')
+      .addItem('❓ Start Here / Help', 'showHelp')
+      .addSeparator()
       .addItem('🔄 Sync Now', 'appendMeetNotesToMaster')
-      .addSeparator()
       .addItem('⏰ Enable Auto-Sync (Every 15m)', 'setupTrigger')
-      .addItem('📜 View Sync History', 'showSyncHistory')
       .addSeparator()
+      .addItem('📜 View Sync History', 'showSyncHistory')
       .addItem('📦 Archive Document Now', 'forceArchive')
       .addItem('🧹 Reset Sync State (Full Re-sync)', 'resetSyncProperties')
-      .addSeparator()
-      .addItem('❓ Help & Setup', 'showHelp')
       .addToUi();
 
     // First run logic
     const props = PropertiesService.getScriptProperties();
     if (!props.getProperty('initialized')) {
-      showHelp();
+      // Note: showHelp() might require authorization to run from a simple onOpen trigger
       insertWelcomeContent();
       props.setProperty('initialized', 'true');
     }
@@ -101,8 +100,8 @@ function insertWelcomeContent() {
 
   body.appendParagraph('Follow these 4 steps to activate your knowledge base:').setHeading(DocumentApp.ParagraphHeading.HEADING2);
 
-  const list1 = body.appendListItem('Authorize the script: Go to the "🚀 NotebookLM" menu and click "🔄 Sync Now". Follow the Google prompts.');
-  const list2 = body.appendListItem('Enable Auto-Sync: In the same menu, click "⏰ Enable Auto-Sync". This will fetch new meetings every 15 minutes.');
+  const list1 = body.appendListItem('Authorize the script: Go to the "🚀 NotebookLM" menu and click "🔄 Sync Now". Follow the Google prompts to give the script access to your documents.');
+  const list2 = body.appendListItem('Enable Auto-Sync: In the same menu, click "⏰ Enable Auto-Sync". This will fetch new meetings every 15 minutes automatically.');
   const list3 = body.appendListItem('Connect to NotebookLM: Add this document as a source in NotebookLM. Remember to click "Refresh" in NotebookLM after a sync!');
   const list4 = body.appendListItem('📦 Manage Archives: When this document reaches its size limit, a "Meeting Notes Archive" is created. You must manually add each new archive to NotebookLM to keep your full history available!');
 
@@ -111,10 +110,13 @@ function insertWelcomeContent() {
   const footer = body.appendParagraph('Note: You can delete these instructions once you are set up. Your meeting notes will appear below the summary table.');
   footer.setItalic(true);
   footer.setAttributes({[DocumentApp.Attribute.FOREGROUND_COLOR]: '#70757a'});
+  footer.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
 
-  const github = body.appendParagraph('Star this project on GitHub');
-  github.setLinkUrl('https://github.com/benoit-prentout/google-meet-gemini-to-notebooklm');
-  github.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  const githubLink = body.appendParagraph('Github Repository');
+  githubLink.setLinkUrl('https://github.com/benoit-prentout/google-meet-gemini-to-notebooklm');
+  githubLink.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  githubLink.setFontSize(8);
+  githubLink.setAttributes({[DocumentApp.Attribute.FOREGROUND_COLOR]: '#70757a'});
   
   doc.saveAndClose();
 }
@@ -129,7 +131,7 @@ function showHelp() {
       <p>This tool consolidates <b>Google Meet "Notes by Gemini"</b> into this document to create a powerful source for NotebookLM.</p>
       
       <div style="background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
-        <div style="margin-bottom: 8px;"><b>🔄 Sync Now:</b> Manually fetch the latest meeting notes.</div>
+        <div style="margin-bottom: 8px;"><b>🔄 Sync Now:</b> Manually fetch the latest meeting notes. This also acts as the <b>authorization</b> step.</div>
         <div style="margin-bottom: 8px;"><b>📜 View History:</b> Check the status of recent sync operations.</div>
         <div style="margin-bottom: 8px;"><b>📦 Archive:</b> Safely move current content to an archive file when it gets too large.</div>
         <div style="margin-bottom: 0;"><b>🧹 Reset:</b> Clear the sync database to re-import all meetings from scratch.</div>
@@ -137,12 +139,12 @@ function showHelp() {
 
       <p style="font-size: 0.9em;"><b>Pro Tip:</b> Add this document to a <a href="https://notebooklm.google.com" target="_blank">NotebookLM</a> notebook and remember to <b>Refresh</b> the source after syncing!</p>
       
-      <div style="text-align: center; margin: 15px 0;">
-        <a href="https://github.com/benoit-prentout/google-meet-gemini-to-notebooklm" target="_blank" style="background: #1a73e8; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-size: 0.9em;">⭐ View on GitHub</a>
+      <div style="text-align: center; margin: 10px 0;">
+        <a href="https://github.com/benoit-prentout/google-meet-gemini-to-notebooklm" target="_blank" style="color: #70757a; text-decoration: none; font-size: 0.8em; border-bottom: 1px solid #70757a;">View on GitHub</a>
       </div>
 
       <hr style="border: 0; border-top: 1px solid #e8eaed; margin: 15px 0;">
-      <div style="font-size: 0.8em; color: #70757a; text-align: center;">v4.1 • 100% English • MIT License</div>
+      <div style="font-size: 0.8em; color: #70757a; text-align: center;">v4.1 • MIT License</div>
     </div>
   `;
   const userInterface = HtmlService.createHtmlOutput(html)
