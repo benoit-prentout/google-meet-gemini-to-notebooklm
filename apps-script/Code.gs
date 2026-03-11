@@ -11,6 +11,9 @@ const CONFIG = {
   // Max size of the master doc (in characters) before auto-archiving. 0 = disabled.
   ARCHIVE_THRESHOLD_CHARS: 800000,
 
+  // Automatically archive at the start of a new month.
+  ENABLE_MONTHLY_ARCHIVE: true,
+
   // Re-sync modified notes after their first sync.
   ENABLE_UPDATE_DETECTION: true,
 
@@ -322,10 +325,32 @@ function forceArchive() {
 function checkAndArchive_(docId, timezone) {
   const props = PropertiesService.getScriptProperties();
   const estimatedChars = parseInt(props.getProperty('estimatedChars') || '0', 10);
+  
+  // 1. Check for Monthly Archive
+  let shouldArchive = false;
+  let archiveReason = "";
+  
+  if (CONFIG.ENABLE_MONTHLY_ARCHIVE) {
+    const now = new Date();
+    const currentMonth = Utilities.formatDate(now, timezone, "yyyy-MM");
+    const lastMonth = props.getProperty('lastArchiveMonth');
+    
+    if (lastMonth && lastMonth !== currentMonth) {
+      shouldArchive = true;
+      archiveReason = `Start of new month (${currentMonth})`;
+    }
+    props.setProperty('lastArchiveMonth', currentMonth);
+  }
 
-  if (estimatedChars < CONFIG.ARCHIVE_THRESHOLD_CHARS) return;
+  // 2. Check for Size Archive
+  if (!shouldArchive && CONFIG.ARCHIVE_THRESHOLD_CHARS > 0 && estimatedChars >= CONFIG.ARCHIVE_THRESHOLD_CHARS) {
+    shouldArchive = true;
+    archiveReason = `Size limit reached (~${estimatedChars} chars)`;
+  }
 
-  console.log(`📦 Archiving threshold reached (~${estimatedChars} chars). Archiving...`);
+  if (!shouldArchive) return;
+
+  console.log(`📦 Archiving triggered. Reason: ${archiveReason}. Archiving...`);
 
   try {
     const dateStr = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd — HH'h'mm");
