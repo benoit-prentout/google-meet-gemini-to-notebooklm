@@ -12,7 +12,7 @@ Consolidez automatiquement toutes les **"Notes par Gemini" de vos réunions Goog
 
 La méthode la plus simple est de copier le template pré-configuré :
 
-1. **[Cliquer ici pour faire une copie du template](https://docs.google.com/document/d/1BL6Mzr5WWqt7OD6ikJXOEVem77ubhrBDeFDy_y3E8R0/copy)**
+1. **[Cliquer ici pour faire une copie du template](https://docs.google.com/document/d/15V0urYyn8lbXGBYzxDKf2-C8aAyOO6DXpAgEPKjRTg0/copy)**
 2. Dans votre nouveau document, rafraîchissez la page.
 3. Un nouveau menu **🚀 NotebookLM** va apparaître.
 4. Lancez **🔄 Sync Now** et suivez les étapes d'autorisation.
@@ -29,7 +29,7 @@ NotebookLM est puissant, mais il limite le nombre de sources (50 sources max). E
 * 📊 **Tableau Récapitulatif** : Un tableau généré automatiquement en haut du doc liste toutes les réunions synchronisées.
 * 📦 **Auto-Archivage** : Des archives sont créées mensuellement ou dès que le document atteint sa taille limite.
 * 📧 **Notifications Mail** : Recevez un mail avec le lien vers votre nouvelle archive dès qu'elle est créée.
-* 🛡️ **Synchro Intelligente** : Fonctionne même sur les fichiers où vous n'avez que des droits de lecture.
+* 🛡️ **Synchro Intelligente** : Fonctionne même sur les fichiers où vous n'avez qu'un accès en lecture seule.
 * ⚡ **Performance** : Utilise les APIs Google avancées pour traiter 20+ réunions en quelques secondes.
 
 ---
