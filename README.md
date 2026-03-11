@@ -8,7 +8,7 @@
 
 The easiest way to use this tool is to copy the pre-configured template:
 
-1. **[Click here to Make a Copy of the Template](https://docs.google.com/document/d/1ag5wr4Tq31zBTEjGliY8hrsamvKw-TAGICwe963z0r4/copy)**
+1. **[Click here to Make a Copy of the Template](https://docs.google.com/document/d/1rqPvR9OtdjjCLj82k1J0LdiRfSFsk-fQbQPtcX2CXeQ/copy)**
 2. In your new document, refresh the page.
 3. A new **🚀 NotebookLM** menu will appear.
 4. Run **🔄 Sync Now** and follow the authorization prompts.

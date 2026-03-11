@@ -8,7 +8,7 @@
 
 La méthode la plus simple est de copier le template pré-configuré :
 
-1. **[Cliquer ici pour faire une copie du template](https://docs.google.com/document/d/1ag5wr4Tq31zBTEjGliY8hrsamvKw-TAGICwe963z0r4/copy)**
+1. **[Cliquer ici pour faire une copie du template](https://docs.google.com/document/d/1rqPvR9OtdjjCLj82k1J0LdiRfSFsk-fQbQPtcX2CXeQ/copy)**
 2. Dans votre nouveau document, rafraîchissez la page.
 3. Un nouveau menu **🚀 NotebookLM** va apparaître.
 4. Lancez **🔄 Synchroniser maintenant** et suivez les étapes d'autorisation.
