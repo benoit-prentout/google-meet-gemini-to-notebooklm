@@ -2,11 +2,20 @@
 
 [English](README.md) | [Français](README_FR.md)
 
-Consolidez automatiquement toutes les **"Notes par Gemini" de vos réunions Google Meet** dans un seul **Google Doc Maître**. C'est l'outil idéal pour créer une base de connaissances vivante et illimitée pour **NotebookLM**.
+---
+
+## 🚀 Installation Rapide (1-Clic)
+
+La méthode la plus simple est de copier le template pré-configuré :
+
+1. **[Cliquer ici pour faire une copie du template](https://docs.google.com/document/d/1ag5wr4Tq31zBTEjGliY8hrsamvKw-TAGICwe963z0r4/copy)**
+2. Dans votre nouveau document, rafraîchissez la page.
+3. Un nouveau menu **🚀 NotebookLM** va apparaître.
+4. Lancez **🔄 Synchroniser maintenant** et suivez les étapes d'autorisation.
 
 ---
 
-## 🚀 Pourquoi cet outil ?
+## 🏗 Pourquoi cet outil ?
 
 NotebookLM est puissant, mais il limite le nombre de sources. En regroupant des mois de réunions (les vôtres et celles de votre équipe) dans un seul document "cerveau", vous permettez à l'IA de faire des connexions sur le long terme sans jamais atteindre les limites de sources.
 

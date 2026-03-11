@@ -2,11 +2,20 @@
 
 [English](README.md) | [Français](README_FR.md)
 
-Automatically consolidate all your **Google Meet "Notes by Gemini"** into a single **Master Google Doc**. This tool is designed to create a living, unlimited knowledge base for **NotebookLM**.
+---
+
+## 🚀 Quick Start (One-Click Install)
+
+The easiest way to use this tool is to copy the pre-configured template:
+
+1. **[Click here to Make a Copy of the Template](https://docs.google.com/document/d/1ag5wr4Tq31zBTEjGliY8hrsamvKw-TAGICwe963z0r4/copy)**
+2. In your new document, refresh the page.
+3. A new **🚀 NotebookLM** menu will appear.
+4. Run **🔄 Sync Now** and follow the authorization prompts.
 
 ---
 
-## 🚀 Why this tool?
+## 🏗 Why this tool?
 
 NotebookLM is powerful, but it limits the number of sources you can add. By grouping months of meetings (yours and your team's) into a single "brain" document, you enable the AI to make long-term connections without ever hitting source limits.
 
