@@ -100,10 +100,10 @@ function insertWelcomeContent() {
 
   body.appendParagraph('Follow these 4 steps to activate your knowledge base:').setHeading(DocumentApp.ParagraphHeading.HEADING2);
 
-  const list1 = body.appendListItem('Authorize the script: Go to the "🚀 NotebookLM" menu and click "🔄 Sync Now". Follow the Google prompts to give the script access to your documents.');
-  const list2 = body.appendListItem('Enable Auto-Sync: In the same menu, click "⏰ Enable Auto-Sync". This will fetch new meetings every 15 minutes automatically.');
-  const list3 = body.appendListItem('Connect to NotebookLM: Add this document as a source in NotebookLM. Remember to click "Refresh" in NotebookLM after a sync!');
-  const list4 = body.appendListItem('📦 Manage Archives: When this document reaches its size limit, a "Meeting Notes Archive" is created. You must manually add each new archive to NotebookLM to keep your full history available!');
+  const list1 = body.appendListItem('Start Here: Go to the "🚀 NotebookLM" menu and click "❓ Start Here / Help" to understand how the tool works.');
+  const list2 = body.appendListItem('Authorize & Sync: Click "🔄 Sync Now" in the same menu. Follow the Google prompts to give the script access to your documents (this is required once).');
+  const list3 = body.appendListItem('Enable Auto-Sync: Click "⏰ Enable Auto-Sync" to fetch new meetings every 15 minutes automatically.');
+  const list4 = body.appendListItem('Manage Archives: When this document reaches its size limit, a "Meeting Notes Archive" is created. Remember to add these archives to NotebookLM too!');
 
   body.appendParagraph('\n---').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
   
