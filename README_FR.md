@@ -66,14 +66,12 @@ Le script a besoin d'accéder directement à Drive et Docs.
    - Cliquez sur **Autoriser**.
 4. Revenez sur votre Google Doc : rafraîchissez la page. Un nouveau menu **🚀 NotebookLM** est apparu !
 
-### 5️⃣ Automatisation (Optionnel mais recommandé)
+### 5️⃣ Automatisation (Méthode simple)
 Pour que la synchro se fasse toute seule toutes les 15 minutes :
-1. Dans Apps Script, cliquez sur l'icône horloge (**Déclencheurs**) à gauche.
-2. Cliquez sur **+ Ajouter un déclencheur**.
-3. Choisissez `appendMeetNotesToMaster`.
-4. Type de source : **Déclencheur temporel**.
-5. Type de minuteur : **Minuteur par minutes**.
-6. Intervalle : **Toutes les 15 minutes**.
+1. Dans votre Google Doc, allez dans le menu **🚀 NotebookLM > ⏰ Enable Auto-Sync**.
+2. C'est tout ! Le script tournera désormais en tâche de fond.
+
+*Note : Vous pouvez toujours configurer des déclencheurs manuels dans l'éditeur Apps Script pour d'autres intervalles.*
 
 ---
 

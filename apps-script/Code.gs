@@ -31,9 +31,11 @@ const CONFIG = {
  */
 function onOpen() {
   try {
-    DocumentApp.getUi().createMenu('🚀 NotebookLM')
+    const ui = DocumentApp.getUi();
+    ui.createMenu('🚀 NotebookLM')
       .addItem('🔄 Sync Now', 'appendMeetNotesToMaster')
       .addSeparator()
+      .addItem('⏰ Enable Auto-Sync (Every 15m)', 'setupTrigger')
       .addItem('📜 View Sync History', 'showSyncHistory')
       .addSeparator()
       .addItem('📦 Archive Document Now', 'forceArchive')
@@ -41,9 +43,75 @@ function onOpen() {
       .addSeparator()
       .addItem('❓ Help & Setup', 'showHelp')
       .addToUi();
+
+    // First run logic
+    const props = PropertiesService.getScriptProperties();
+    if (!props.getProperty('initialized')) {
+      showHelp();
+      insertWelcomeContent();
+      props.setProperty('initialized', 'true');
+    }
   } catch (e) {
     console.error('Menu creation failed:', e.message);
   }
+}
+
+/**
+ * Automatically sets up a 15-minute time-based trigger.
+ */
+function setupTrigger() {
+  const ui = DocumentApp.getUi();
+  
+  // Check if trigger already exists
+  const allTriggers = ScriptApp.getProjectTriggers();
+  const existing = allTriggers.find(t => t.getHandlerFunction() === 'appendMeetNotesToMaster');
+  
+  if (existing) {
+    ui.alert('⏰ Auto-Sync is already active.');
+    return;
+  }
+
+  try {
+    ScriptApp.newTrigger('appendMeetNotesToMaster')
+      .timeBased()
+      .everyMinutes(15)
+      .create();
+      
+    ui.alert('✅ Success!', 'Auto-sync is now active. This document will update every 15 minutes.', ui.ButtonSet.OK);
+  } catch (e) {
+    ui.alert('❌ Error', 'Could not set up trigger: ' + e.message + '\n\nMake sure you have approved all permissions.', ui.ButtonSet.OK);
+  }
+}
+
+/**
+ * Inserts a beautiful setup guide into the document body.
+ */
+function insertWelcomeContent() {
+  const doc = DocumentApp.getActiveDocument();
+  const body = doc.getBody();
+  
+  // Only insert if the document is essentially empty
+  if (body.getText().trim().length > 100) return;
+
+  body.clear();
+  
+  const title = body.appendParagraph('🚀 Welcome to NotebookLM Sync');
+  title.setHeading(DocumentApp.ParagraphHeading.TITLE);
+  title.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+  body.appendParagraph('Follow these 3 steps to activate your knowledge base:').setHeading(DocumentApp.ParagraphHeading.HEADING2);
+
+  const list1 = body.appendListItem('Authorize the script: Go to the "🚀 NotebookLM" menu and click "🔄 Sync Now". Follow the Google prompts.');
+  const list2 = body.appendListItem('Enable Auto-Sync: In the same menu, click "⏰ Enable Auto-Sync". This will fetch new meetings every 15 minutes.');
+  const list3 = body.appendListItem('Connect to NotebookLM: Add this document as a source in NotebookLM. Remember to click "Refresh" in NotebookLM after a sync!');
+
+  body.appendParagraph('\n---').setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+  
+  const footer = body.appendParagraph('Note: You can delete these instructions once you are set up. Your meeting notes will appear below the summary table.');
+  footer.setItalic(true);
+  footer.setAttributes({[DocumentApp.Attribute.FOREGROUND_COLOR]: '#70757a'});
+  
+  doc.saveAndClose();
 }
 
 /**

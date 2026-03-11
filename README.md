@@ -66,14 +66,12 @@ The script needs direct access to Drive and Docs APIs.
    - Click **Allow**.
 4. Go back to your Google Doc and refresh the page. A new **🚀 NotebookLM** menu will appear!
 
-### 5️⃣ Automation (Optional but recommended)
+### 5️⃣ Automation (Easiest Method)
 To have the sync run automatically every 15 minutes:
-1. In Apps Script, click the clock icon (**Triggers**) on the left.
-2. Click **+ Add Trigger**.
-3. Choose `appendMeetNotesToMaster`.
-4. Event source: **Time-driven**.
-5. Type of timer: **Minutes timer**.
-6. Interval: **Every 15 minutes**.
+1. In your Google Doc, go to the menu **🚀 NotebookLM > ⏰ Enable Auto-Sync**.
+2. That's it! The script will now run in the background.
+
+*Note: You can also set up manual triggers in the Apps Script editor if you prefer different intervals.*
 
 ---
 
