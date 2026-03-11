@@ -72,9 +72,11 @@ To have the sync run automatically every 15 minutes:
 
 | Option | Description |
 |---|---|
-| **Synchroniser maintenant** | Forces an immediate sync of the latest meetings. |
-| **Archiver maintenant** | Manually empty the master doc and create an archive. |
-| **Réinitialiser l'état** | Useful if you want to re-import everything from scratch. |
+| **🔄 Sync Now** | Forces an immediate sync of the latest meetings. |
+| **📜 View Sync History** | Displays a log of recent synchronization runs. |
+| **📦 Archive Document Now** | Manually empty the master doc and create a timestamped archive. |
+| **🧹 Reset Sync State** | Useful if you want to re-import everything from scratch by clearing the local database. |
+| **❓ Help & Setup** | Shows instructions and quick tips. |
 
 ---
 

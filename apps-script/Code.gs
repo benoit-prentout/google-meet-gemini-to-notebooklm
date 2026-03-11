@@ -1,5 +1,6 @@
 /**
- * Google Meet Gemini Notes → NotebookLM Sync (v4)
+ * Google Meet Gemini Notes → NotebookLM Sync (v4.1)
+ * 100% English Version with UI Refinements
  */
 
 const CONFIG = {
@@ -7,56 +8,95 @@ const CONFIG = {
   MAX_FILES_PER_RUN: 20,
   ENABLE_NOTIFICATIONS: true,
 
-  // Taille max du doc maître (en caractères) avant archivage automatique. 0 = désactivé.
+  // Max size of the master doc (in characters) before auto-archiving. 0 = disabled.
   ARCHIVE_THRESHOLD_CHARS: 800000,
 
-  // Re-synchroniser les notes modifiées après leur premier sync.
+  // Re-sync modified notes after their first sync.
   ENABLE_UPDATE_DETECTION: true,
 
-  // Filtrer les fichiers plus vieux que N jours. 0 = pas de filtre.
+  // Filter files older than N days. 0 = no filter.
   MAX_AGE_DAYS: 0,
 
-  // Tentatives max en cas d'erreur API transitoire.
+  // Max retries for transient API errors.
   MAX_RETRIES: 3,
 
-  // Nombre de syncs conservés dans l'historique.
+  // Number of syncs kept in history.
   HISTORY_SIZE: 20,
 };
 
 // ─── MENU ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Creates the custom menu when the document opens.
+ */
 function onOpen() {
   try {
     DocumentApp.getUi().createMenu('🚀 NotebookLM')
-      .addItem('Synchroniser maintenant', 'appendMeetNotesToMaster')
+      .addItem('🔄 Sync Now', 'appendMeetNotesToMaster')
       .addSeparator()
-      .addItem("Voir l'historique des syncs", 'showSyncHistory')
+      .addItem('📜 View Sync History', 'showSyncHistory')
       .addSeparator()
-      .addItem('Archiver le document maintenant', 'forceArchive')
-      .addItem("Réinitialiser l'état (Reset)", 'resetSyncProperties')
+      .addItem('📦 Archive Document Now', 'forceArchive')
+      .addItem('🧹 Reset Sync State (Full Re-sync)', 'resetSyncProperties')
+      .addSeparator()
+      .addItem('❓ Help & Setup', 'showHelp')
       .addToUi();
-  } catch (e) {}
+  } catch (e) {
+    console.error('Menu creation failed:', e.message);
+  }
 }
 
-// ─── SYNC PRINCIPAL ───────────────────────────────────────────────────────────
+/**
+ * Displays a help dialog with instructions.
+ */
+function showHelp() {
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 15px; color: #3c4043; line-height: 1.5;">
+      <h2 style="color: #1a73e8; margin-top: 0;">🚀 NotebookLM Sync Help</h2>
+      <p>This tool consolidates <b>Google Meet "Notes by Gemini"</b> into this document to create a powerful source for NotebookLM.</p>
+      
+      <div style="background: #f8f9fa; border-radius: 8px; padding: 12px; margin-bottom: 15px;">
+        <div style="margin-bottom: 8px;"><b>🔄 Sync Now:</b> Manually fetch the latest meeting notes.</div>
+        <div style="margin-bottom: 8px;"><b>📜 View History:</b> Check the status of recent sync operations.</div>
+        <div style="margin-bottom: 8px;"><b>📦 Archive:</b> Safely move current content to an archive file when it gets too large.</div>
+        <div style="margin-bottom: 0;"><b>🧹 Reset:</b> Clear the sync database to re-import all meetings from scratch.</div>
+      </div>
 
+      <p style="font-size: 0.9em;"><b>Pro Tip:</b> Add this document to a <a href="https://notebooklm.google.com" target="_blank">NotebookLM</a> notebook and remember to <b>Refresh</b> the source after syncing!</p>
+      
+      <hr style="border: 0; border-top: 1px solid #e8eaed; margin: 15px 0;">
+      <div style="font-size: 0.8em; color: #70757a; text-align: center;">v4.1 • 100% English • MIT License</div>
+    </div>
+  `;
+  const userInterface = HtmlService.createHtmlOutput(html)
+    .setTitle('Help & Documentation')
+    .setWidth(450)
+    .setHeight(400);
+  DocumentApp.getUi().showModelessDialog(userInterface, ' ');
+}
+
+// ─── MAIN SYNC LOGIC ──────────────────────────────────────────────────────────
+
+/**
+ * Main function to find, clean, and append new meeting notes.
+ */
 function appendMeetNotesToMaster() {
   const startTime = Date.now();
   const docId = DocumentApp.getActiveDocument().getId();
-  const timezone = Session.getTimeZone() || 'Europe/Paris';
+  const timezone = Session.getScriptTimeZone() || 'UTC';
   const props = PropertiesService.getScriptProperties();
 
-  console.time('Synchro Totale');
+  console.time('Total Sync');
 
-  // 1. Identification des fichiers à traiter
-  // On cherche : 
-  // - Dans le dossier "Meet Recordings" local
-  // - OU les fichiers partagés dont le nom contient "Notes de la réunion" ou "Notes for"
+  // 1. Identify files to process
+  // Search in: 
+  // - Local "Meet Recordings" folder
+  // - OR shared files with specific naming conventions
   const folderId = getFolderIdByName_(CONFIG.SOURCE_FOLDER_NAME);
   
   let query = `mimeType = 'application/vnd.google-apps.document' and trashed = false`;
   let folderQuery = folderId ? `'${folderId}' in parents` : '';
-  let nameQuery = `(name contains 'Notes de la réunion' or name contains 'Notes for' or name contains 'Notes par Gemini')`;
+  let nameQuery = `(name contains 'Notes de la réunion' or name contains 'Meeting notes' or name contains 'Notes for' or name contains 'Notes by Gemini' or name contains 'Notes par Gemini')`;
   
   if (folderQuery) {
     query += ` and (${folderQuery} or ${nameQuery})`;
@@ -71,7 +111,7 @@ function appendMeetNotesToMaster() {
 
   const result = apiCall_(() => Drive.Files.list({
     q: query,
-    pageSize: 100, // On prend une marge pour le filtrage manuel
+    pageSize: 100, 
     fields: 'files(id, name, createdTime, modifiedTime)',
     orderBy: 'createdTime desc',
     supportsAllDrives: true,
@@ -79,12 +119,12 @@ function appendMeetNotesToMaster() {
   }));
 
   if (!result.files || result.files.length === 0) {
-    console.log('Aucune réunion trouvée.');
-    showAlert_('Tout est déjà à jour !');
+    console.log('No meetings found.');
+    showAlert_('Everything is already up to date!');
     return;
   }
 
-  // 2. Filtrage des fichiers déjà synchronisés (via PropertiesService)
+  // 2. Filter already synced files (using PropertiesService)
   const toProcess = [];
   const updatedIds = [];
   
@@ -94,10 +134,10 @@ function appendMeetNotesToMaster() {
     if (!lastSyncTime) {
       toProcess.push(file);
     } else if (CONFIG.ENABLE_UPDATE_DETECTION) {
-      // Détection de mise à jour : comparaison des dates
+      // Update detection: compare modification dates
       const modifiedDate = new Date(file.modifiedTime).getTime();
       const syncDate = parseInt(lastSyncTime, 10);
-      const GRACE_MS = 5 * 60 * 1000; // Marge de 5min
+      const GRACE_MS = 5 * 60 * 1000; // 5 min grace period
       
       if (modifiedDate > syncDate + GRACE_MS) {
         toProcess.push(file);
@@ -109,17 +149,17 @@ function appendMeetNotesToMaster() {
   }
 
   if (toProcess.length === 0) {
-    console.log('Tout est déjà synchronisé.');
-    showAlert_('Tout est déjà à jour !');
+    console.log('All files are already synced.');
+    showAlert_('Everything is already up to date!');
     return;
   }
 
-  // 3. Archivage si le doc dépasse le seuil
+  // 3. Check for auto-archiving
   if (CONFIG.ARCHIVE_THRESHOLD_CHARS > 0) {
     checkAndArchive_(docId, timezone);
   }
 
-  // 4. Traitement des fichiers
+  // 4. Process files
   const filesToProcess = toProcess.reverse();
   const requests = [];
   const syncedEntries = [];
@@ -127,13 +167,13 @@ function appendMeetNotesToMaster() {
 
   for (const file of filesToProcess) {
     try {
-      console.log(`Extraction : ${file.name}`);
+      console.log(`Processing: ${file.name}`);
       const rawText = apiCall_(() => exportFileAsText_(file.id));
 
       const participants = extractParticipants_(rawText);
       const cleanText = cleanGeminiText_(rawText);
       const isUpdate = updatedIds.indexOf(file.id) !== -1;
-      const dateStr = Utilities.formatDate(new Date(file.createdTime), timezone, 'dd/MM/yyyy');
+      const dateStr = Utilities.formatDate(new Date(file.createdTime), timezone, 'yyyy-MM-dd');
 
       const blockText = buildBlock_(file.name, dateStr, participants, cleanText, isUpdate);
       
@@ -144,17 +184,17 @@ function appendMeetNotesToMaster() {
         },
       });
 
-      // Stocker l'état de synchro localement (timestamp de modification)
+      // Store sync state locally (modification timestamp)
       props.setProperty('SYNC_' + file.id, String(new Date(file.modifiedTime).getTime()));
       syncedEntries.push({ name: file.name, date: dateStr });
 
     } catch (e) {
       errorCount++;
-      console.error(`Erreur sur ${file.name}: ${e.message}\n${e.stack}`);
+      console.error(`Error on ${file.name}: ${e.message}\n${e.stack}`);
     }
   }
 
-  // 5. Envoi groupé vers le document
+  // 5. Batch update the document
   if (requests.length > 0) {
     apiCall_(() => Docs.Documents.batchUpdate({ requests }, docId));
     updateDocSizeEstimate_(requests);
@@ -162,45 +202,51 @@ function appendMeetNotesToMaster() {
     try {
       updateSummaryTable_(docId, syncedEntries);
     } catch (e) {
-      console.error(`Tableau récapitulatif échoué : ${e.message}`);
+      console.error(`Summary table update failed: ${e.message}`);
     }
 
     if (CONFIG.ENABLE_NOTIFICATIONS) {
       try {
         sendNotification_(syncedEntries.map(e => e.name), updatedIds.map(id => id), errorCount, `https://docs.google.com/document/d/${docId}/edit`);
       } catch (e) {
-        console.error(`Notification échouée : ${e.message}`);
+        console.error(`Notification failed: ${e.message}`);
       }
     }
 
     const duration = Date.now() - startTime;
-    console.timeEnd('Synchro Totale');
+    console.timeEnd('Total Sync');
     logSyncRun_({ date: new Date().toISOString(), synced: syncedEntries.length, updated: updatedIds.length, errors: errorCount, duration });
 
-    const errorMsg = errorCount > 0 ? ` ⚠️ ${errorCount} erreur(s) — voir les logs STACKDRIVER.` : '';
-    showAlert_(`✅ ${syncedEntries.length} réunion(s) ajoutée(s).${errorMsg}`);
+    const errorMsg = errorCount > 0 ? ` ⚠️ ${errorCount} error(s) — check Stackdriver logs.` : '';
+    showAlert_(`✅ ${syncedEntries.length} meeting(s) added.${errorMsg}`);
   }
 }
 
-// ─── ARCHIVAGE ────────────────────────────────────────────────────────────────
+// ─── ARCHIVING ────────────────────────────────────────────────────────────────
 
+/**
+ * Manually triggers an archive of the current document.
+ */
 function forceArchive() {
   const ui = DocumentApp.getUi();
-  if (ui.alert('Archiver', 'Copier ce document dans une archive et le vider ?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  if (ui.alert('Archive', 'Copy this document to an archive and clear the current content?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
   const docId = DocumentApp.getActiveDocument().getId();
-  const timezone = Session.getTimeZone() || 'Europe/Paris';
+  const timezone = Session.getScriptTimeZone() || 'UTC';
   PropertiesService.getScriptProperties().setProperty('estimatedChars', String(Number.MAX_SAFE_INTEGER));
   checkAndArchive_(docId, timezone);
-  showAlert_('✅ Archive créée. Le document maître a été vidé.');
+  showAlert_('✅ Archive created. The master document has been cleared.');
 }
 
+/**
+ * Checks document size and archives if threshold is reached.
+ */
 function checkAndArchive_(docId, timezone) {
   const props = PropertiesService.getScriptProperties();
   const estimatedChars = parseInt(props.getProperty('estimatedChars') || '0', 10);
 
   if (estimatedChars < CONFIG.ARCHIVE_THRESHOLD_CHARS) return;
 
-  console.log(`📦 Seuil d'archivage atteint (~${estimatedChars} chars). Archivage en cours...`);
+  console.log(`📦 Archiving threshold reached (~${estimatedChars} chars). Archiving...`);
 
   try {
     const dateStr = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd — HH'h'mm");
@@ -208,7 +254,7 @@ function checkAndArchive_(docId, timezone) {
     const copy = apiCall_(() => Drive.Files.copy({ name: `Meeting Notes Archive — ${dateStr}` }, docId));
     const archiveUrl = `https://docs.google.com/document/d/${copy.id}/edit`;
 
-    // Marquer l'archive comme synchronisée localement
+    // Mark the archive as synced locally
     props.setProperty('SYNC_' + copy.id, String(Date.now()));
 
     const metaUrl = `https://docs.googleapis.com/v1/documents/${docId}?fields=body.content.endIndex`;
@@ -224,18 +270,38 @@ function checkAndArchive_(docId, timezone) {
       clearRequests.push({ deleteContentRange: { range: { startIndex: 1, endIndex } } });
     }
     clearRequests.push({
-      insertText: { location: { index: 1 }, text: `[Meeting Notes Archive du ${dateStr} → ${archiveUrl} ]\n\n` },
+      insertText: { location: { index: 1 }, text: `[Meeting Notes Archive — ${dateStr} → ${archiveUrl} ]\n\n` },
     });
     apiCall_(() => Docs.Documents.batchUpdate({ requests: clearRequests }, docId));
 
     props.setProperty('estimatedChars', '0');
-    console.log(`✅ Archivé : Meeting Notes Archive — ${dateStr} (${archiveUrl})`);
+    console.log(`✅ Archived: Meeting Notes Archive — ${dateStr} (${archiveUrl})`);
+
+    // Send email notification for the archive
+    try {
+      const email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+      if (email) {
+        MailApp.sendEmail(
+          email,
+          `📦 Document Archived — NotebookLM Sync`,
+          `The master document reached its size limit and has been archived.\n\n` +
+          `Archive Name: Meeting Notes Archive — ${dateStr}\n` +
+          `Archive Link: ${archiveUrl}\n\n` +
+          `The master document has been cleared and is ready for new meetings.`
+        );
+      }
+    } catch (e) {
+      console.error(`Archive notification failed: ${e.message}`);
+    }
 
   } catch (e) {
-    console.error(`Archivage échoué : ${e.message}`);
+    console.error(`Archiving failed: ${e.message}`);
   }
 }
 
+/**
+ * Updates the estimated document size based on inserted text.
+ */
 function updateDocSizeEstimate_(requests) {
   const props = PropertiesService.getScriptProperties();
   const current = parseInt(props.getProperty('estimatedChars') || '0', 10);
@@ -245,11 +311,14 @@ function updateDocSizeEstimate_(requests) {
 
 // ─── RESET ────────────────────────────────────────────────────────────────────
 
+/**
+ * Resets the local sync database to allow re-importing all meetings.
+ */
 function resetSyncProperties() {
   const ui = DocumentApp.getUi();
   const response = ui.alert(
     'Confirmation',
-    'Voulez-vous tout ré-importer ?\nToutes les réunions seront re-synchronisées.',
+    'Do you want to re-import everything?\nAll past meeting notes will be re-synced.',
     ui.ButtonSet.YES_NO
   );
   if (response !== ui.Button.YES) return;
@@ -264,29 +333,35 @@ function resetSyncProperties() {
   }
 
   props.deleteProperty('estimatedChars');
-  ui.alert('🔄 Prêt pour ré-importation.');
+  ui.alert('🔄 Ready for re-importation.');
 }
 
-// ─── HISTORIQUE ───────────────────────────────────────────────────────────────
+// ─── HISTORY ──────────────────────────────────────────────────────────────────
 
+/**
+ * Shows the history of recent sync operations.
+ */
 function showSyncHistory() {
   const props = PropertiesService.getScriptProperties();
   const history = JSON.parse(props.getProperty('syncHistory') || '[]');
 
   if (history.length === 0) {
-    showAlert_('Aucun historique disponible.');
+    showAlert_('No sync history available.');
     return;
   }
 
   const lines = history.map(run => {
     const d = new Date(run.date).toLocaleString();
     const dur = `${(run.duration / 1000).toFixed(1)}s`;
-    return `${d}  |  +${run.synced} nouvelles  |  ↻${run.updated} MàJ  |  ⚠️${run.errors} erreurs  |  ⏱${dur}`;
+    return `${d}  |  +${run.synced} new  |  ↻${run.updated} updates  |  ⚠️${run.errors} errors  |  ⏱${dur}`;
   });
 
-  showAlert_(`Historique (${history.length} dernières syncs) :\n\n${lines.join('\n')}`);
+  showAlert_(`Sync History (latest ${history.length} runs):\n\n${lines.join('\n')}`);
 }
 
+/**
+ * Logs a sync run to the internal history.
+ */
 function logSyncRun_(run) {
   try {
     const props = PropertiesService.getScriptProperties();
@@ -295,12 +370,15 @@ function logSyncRun_(run) {
     if (history.length > CONFIG.HISTORY_SIZE) history.length = CONFIG.HISTORY_SIZE;
     props.setProperty('syncHistory', JSON.stringify(history));
   } catch (e) {
-    console.error(`logSyncRun_ échoué : ${e.message}`);
+    console.error(`logSyncRun_ failed: ${e.message}`);
   }
 }
 
-// ─── TABLEAU RÉCAPITULATIF ────────────────────────────────────────────────────
+// ─── SUMMARY TABLE ────────────────────────────────────────────────────────────
 
+/**
+ * Updates the summary table at the top of the document.
+ */
 function updateSummaryTable_(docId, newEntries) {
   const doc = DocumentApp.openById(docId);
   const body = doc.getBody();
@@ -308,7 +386,7 @@ function updateSummaryTable_(docId, newEntries) {
   let table = body.getTables()[0];
   
   if (!table) {
-    table = body.insertTable(0, [['Date', 'Réunion']]);
+    table = body.insertTable(0, [['Date', 'Meeting Name']]);
     table.getRow(0).setAttributes({
       [DocumentApp.Attribute.BOLD]: true,
       [DocumentApp.Attribute.BACKGROUND_COLOR]: '#f3f3f3'
@@ -328,6 +406,9 @@ function updateSummaryTable_(docId, newEntries) {
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
+/**
+ * Finds a folder ID by its name.
+ */
 function getFolderIdByName_(name) {
   const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   const res = apiCall_(() => Drive.Files.list({
@@ -337,6 +418,9 @@ function getFolderIdByName_(name) {
   return res.files && res.files.length > 0 ? res.files[0].id : null;
 }
 
+/**
+ * Extracts participant names from raw text.
+ */
 function extractParticipants_(text) {
   const match = text.match(/(?:Participants|Attendees|Présents)\s*:\s*([^\n]*)(\n(?!\n)[^\n]+)*/i);
   if (!match) return null;
@@ -356,6 +440,9 @@ function extractParticipants_(text) {
   return entries.length > 0 ? entries.join(', ') : null;
 }
 
+/**
+ * Cleans Gemini notes text by removing metadata and simplifying formatting.
+ */
 function cleanGeminiText_(text) {
   return text
     .replace(/(?:Participants|Attendees|Présents)\s*:.*?(?=\n\n|\n[A-Z]|$)/is, '')
@@ -368,32 +455,44 @@ function cleanGeminiText_(text) {
     .trim();
 }
 
+/**
+ * Builds the text block for a meeting.
+ */
 function buildBlock_(name, dateStr, participants, cleanText, isUpdate) {
-  const updateTag = isUpdate ? ' [MISE À JOUR]' : '';
-  const participantsLine = participants ? `👥 Participants : ${participants}\n` : '';
-  return `\n\n${name}${updateTag}\n📅 Date : ${dateStr}\n${participantsLine}${'─'.repeat(58)}\n${cleanText}\n`;
+  const updateTag = isUpdate ? ' [UPDATED]' : '';
+  const participantsLine = participants ? `👥 Participants: ${participants}\n` : '';
+  return `\n\n${name}${updateTag}\n📅 Date: ${dateStr}\n${participantsLine}${'─'.repeat(58)}\n${cleanText}\n`;
 }
 
+/**
+ * Sends an email notification after sync.
+ */
 function sendNotification_(newMeetings, updatedMeetings, errorCount, url) {
   const email = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
   if (!email) return;
 
   const parts = [];
-  if (newMeetings.length > 0) parts.push(`Nouvelles réunions :\n- ${newMeetings.join('\n- ')}`);
-  if (updatedMeetings.length > 0) parts.push(`Mises à jour :\n- ${updatedMeetings.join('\n- ')}`);
-  if (errorCount > 0) parts.push(`⚠️ ${errorCount} fichier(s) en erreur — vérifiez les logs STACKDRIVER.`);
+  if (newMeetings.length > 0) parts.push(`New meetings:\n- ${newMeetings.join('\n- ')}`);
+  if (updatedMeetings.length > 0) parts.push(`Updates:\n- ${updatedMeetings.join('\n- ')}`);
+  if (errorCount > 0) parts.push(`⚠️ ${errorCount} file(s) failed — check Stackdriver logs.`);
 
   MailApp.sendEmail(
     email,
-    `✅ Synchro NotebookLM (${newMeetings.length + updatedMeetings.length} réunions)`,
-    `${parts.join('\n\n')}\n\nDoc : ${url}`
+    `✅ NotebookLM Sync Status (${newMeetings.length + updatedMeetings.length} meetings)`,
+    `${parts.join('\n\n')}\n\nDocument: ${url}`
   );
 }
 
+/**
+ * Displays a simple UI alert.
+ */
 function showAlert_(msg) {
   try { DocumentApp.getUi().alert(msg); } catch (e) {}
 }
 
+/**
+ * Exports a Drive file as plain text.
+ */
 function exportFileAsText_(fileId) {
   const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=text%2Fplain`;
   const response = UrlFetchApp.fetch(url, {
@@ -401,11 +500,14 @@ function exportFileAsText_(fileId) {
     muteHttpExceptions: true,
   });
   if (response.getResponseCode() !== 200) {
-    throw new Error(`Export échoué (${response.getResponseCode()}) : ${response.getContentText().slice(0, 200)}`);
+    throw new Error(`Export failed (${response.getResponseCode()}): ${response.getContentText().slice(0, 200)}`);
   }
   return response.getContentText();
 }
 
+/**
+ * Helper to call APIs with automatic retries.
+ */
 function apiCall_(fn) {
   let lastError;
   for (let attempt = 0; attempt < CONFIG.MAX_RETRIES; attempt++) {
@@ -415,7 +517,7 @@ function apiCall_(fn) {
       lastError = e;
       if (attempt < CONFIG.MAX_RETRIES - 1) {
         const delay = Math.pow(2, attempt) * 500;
-        console.warn(`API erreur (tentative ${attempt + 1}/${CONFIG.MAX_RETRIES}) : ${e.message}. Retry dans ${delay}ms`);
+        console.warn(`API error (attempt ${attempt + 1}/${CONFIG.MAX_RETRIES}): ${e.message}. Retrying in ${delay}ms`);
         Utilities.sleep(delay);
       }
     }
