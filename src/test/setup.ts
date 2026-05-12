@@ -1,0 +1,27 @@
+import '@testing-library/jest-dom';
+
+// Mock chrome APIs
+const chromeMock = {
+  storage: {
+    sync: {
+      get: vi.fn(),
+      set: vi.fn(),
+      remove: vi.fn(),
+    },
+  },
+  identity: {
+    getAuthToken: vi.fn(),
+    removeCachedAuthToken: vi.fn(),
+  },
+  runtime: {
+    lastError: undefined as chrome.runtime.LastError | undefined,
+  },
+  tabs: {
+    create: vi.fn(),
+  },
+};
+
+Object.defineProperty(globalThis, 'chrome', {
+  value: chromeMock,
+  writable: true,
+});
