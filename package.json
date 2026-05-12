@@ -8,11 +8,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "lucide-react": "^0.300.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "zustand": "^4.5.0",
     "recharts": "^2.12.0",
-    "lucide-react": "^0.300.0"
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.260",

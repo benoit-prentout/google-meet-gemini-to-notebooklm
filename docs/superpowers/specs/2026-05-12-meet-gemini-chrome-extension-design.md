@@ -15,19 +15,19 @@ Transform the existing Google Apps Script into a Chrome extension with a full Re
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Chrome Extension                          │
-│  React + Vite + TypeScript + Zustand                         │
+│                    Chrome Extension                         │
+│  React + Vite + TypeScript + Zustand                        │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
 │  │   React     │  │   State     │  │  Google OAuth       │  │
-│  │   Dashboard │◄─┤   (Zustand) │◄─┤  (via Chrome Identity│  │
+│  │   Dashboard │◄─┤   (Zustand) │◄─┤ (via Chrome Identity│  │
 │  │             │  │             │  │   API)              │  │
 │  └─────────────┘  └─────────────┘  └──────────┬──────────┘  │
-└─────────────────────────────────────────────────┼─────────────┘
+└─────────────────────────────────────────────────┼───────────┘
                                                   │
                                                   ▼ HTTP REST
 ┌─────────────────────────────────────────────────────────────┐
-│                   Apps Script (Web App)                       │
-│  REST Endpoints + Sync Engine + Archive Manager              │
+│                   Apps Script (Web App)                     │
+│  REST Endpoints + Sync Engine + Archive Manager             │
 └─────────────────────────────────────────────────────────────┘
                                                   │
                                                   ▼
