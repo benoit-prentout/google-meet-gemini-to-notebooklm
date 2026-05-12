@@ -13,10 +13,10 @@ function App() {
       getHistory().catch(console.error);
       getFiles().catch(console.error);
     }
+    // API functions from useApi are stable refs (useCallback with [accessToken] deps).
+    // Re-fetch only when auth state changes; accessToken changes with isAuthenticated in the same render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // API functions are useCallback refs that may be recreated on store updates;
-    // intentionally depend only on isAuthenticated to avoid re-run loops.
-  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
   
   return <Dashboard />;
 }

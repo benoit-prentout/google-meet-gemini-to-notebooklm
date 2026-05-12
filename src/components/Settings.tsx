@@ -114,7 +114,7 @@ export function Settings() {
                 id="maxFilesPerRun"
                 type="number"
                 value={settings.maxFilesPerRun}
-                onChange={(e) => updateSetting('maxFilesPerRun', parseInt(e.target.value) || 10)}
+                onChange={(e) => updateSetting('maxFilesPerRun', parseInt(e.target.value, 10) || 10)}
               />
             </div>
             <div className="space-y-2">
