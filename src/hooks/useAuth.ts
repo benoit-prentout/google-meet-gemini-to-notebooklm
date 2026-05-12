@@ -3,9 +3,8 @@ import { useSettingsStore } from '@/store/settingsStore';
 import { api } from '@/lib/api';
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/drive.readonly',
-  'https://www.googleapis.com/auth/documents',
-  'https://www.googleapis.com/auth/script.scriptapp',
+  'openid',
+  'email',
 ];
 
 export function useAuth() {
