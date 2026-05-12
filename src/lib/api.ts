@@ -11,17 +11,12 @@ export class ApiError extends Error {
 }
 
 async function getDeploymentUrl(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    chrome.storage.sync.get('deploymentUrl', (result) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      } else if (result.deploymentUrl) {
-        resolve(result.deploymentUrl as string);
-      } else {
-        reject(new Error('Deployment URL not configured. Please complete setup first.'));
-      }
-    });
-  });
+  const result = await chrome.storage.sync.get('deploymentUrl');
+  const url = result.deploymentUrl;
+  if (typeof url !== 'string' || !url) {
+    throw new Error('Deployment URL not configured. Please complete setup first.');
+  }
+  return url;
 }
 
 async function fetchApi<T>(
@@ -30,8 +25,14 @@ async function fetchApi<T>(
   accessToken?: string
 ): Promise<T> {
   const base = await getDeploymentUrl();
-  const url = new URL(base);
+  let url: URL;
+  try {
+    url = new URL(base);
+  } catch {
+    throw new ApiError('Invalid deployment URL. Please check your setup settings.');
+  }
   url.searchParams.set('action', endpoint);
+  // Apps Script web apps strip Authorization headers; token must be a query param
   if (accessToken) {
     url.searchParams.set('token', accessToken);
   }
