@@ -45,7 +45,7 @@ const CONFIG = {
 function validateCaller_(accessToken) {
   if (!accessToken) return false;
   const cache = CacheService.getScriptCache();
-  const cached = cache.get('auth_' + accessToken.slice(-16));
+  const cached = cache.get('auth_' + accessToken.slice(0, 32));
   if (cached === 'ok') return true;
   try {
     const resp = UrlFetchApp.fetch(
@@ -55,8 +55,12 @@ function validateCaller_(accessToken) {
     if (resp.getResponseCode() !== 200) return false;
     const info = JSON.parse(resp.getContentText());
     const ownerEmail = Session.getActiveUser().getEmail();
-    if (info.email && ownerEmail && info.email === ownerEmail) {
-      cache.put('auth_' + accessToken.slice(-16), 'ok', 300);
+    if (!ownerEmail) {
+      console.warn('validateCaller_: Session.getActiveUser().getEmail() returned empty — auth will fail until resolved');
+      return false;
+    }
+    if (info.email && info.email === ownerEmail) {
+      cache.put('auth_' + accessToken.slice(0, 32), 'ok', 300);
       return true;
     }
     return false;
@@ -157,7 +161,11 @@ function updateSettings(settings) {
   }
   var props = PropertiesService.getScriptProperties();
   Object.assign(CONFIG, sanitized);
-  props.setProperty('CONFIG_OVERRIDES', JSON.stringify(CONFIG));
+  var toSave = {};
+  for (var j = 0; j < ALLOWED_SETTINGS_KEYS_.length; j++) {
+    toSave[ALLOWED_SETTINGS_KEYS_[j]] = CONFIG[ALLOWED_SETTINGS_KEYS_[j]];
+  }
+  props.setProperty('CONFIG_OVERRIDES', JSON.stringify(toSave));
   return { success: true, message: 'Settings updated' };
 }
 
@@ -169,7 +177,7 @@ function getHistory() {
     var status = r.errors > 0 ? (filesProcessed > 0 ? 'partial' : 'error') : 'success';
     var message = (r.synced || 0) + ' synced, ' + (r.updated || 0) + ' updated' + (r.errors ? ', ' + r.errors + ' errors' : '');
     return {
-      id: r.date + '_' + i,
+      id: r.date,
       timestamp: r.date,
       filesProcessed: filesProcessed,
       status: status,
@@ -634,8 +642,7 @@ function forceArchive() {
   if (ui.alert('Archive', 'Copy this document to an archive and clear the current content?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
   const docId = DocumentApp.getActiveDocument().getId();
   const timezone = Session.getScriptTimeZone() || 'UTC';
-  PropertiesService.getScriptProperties().setProperty('estimatedChars', String(Number.MAX_SAFE_INTEGER));
-  checkAndArchive_(docId, timezone);
+  checkAndArchive_(docId, timezone, true);
   showAlert_('✅ Archive created. The master document has been cleared.');
 }
 
