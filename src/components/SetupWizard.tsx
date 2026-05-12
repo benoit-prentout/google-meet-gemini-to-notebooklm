@@ -45,12 +45,12 @@ export function SetupWizard() {
           else resolve();
         });
       });
-      setDeploymentUrl(url.trim());
       await signIn();
+      // Only transition to Dashboard after auth succeeds
+      setDeploymentUrl(url.trim());
     } catch (err) {
-      // Roll back the stored URL so the user can retry with a corrected URL
+      // Roll back the stored URL so the user can retry
       chrome.storage.sync.remove('deploymentUrl');
-      setDeploymentUrl(null);
       setError(err instanceof Error ? err.message : 'Setup failed. Please try again.');
     } finally {
       setSaving(false);
