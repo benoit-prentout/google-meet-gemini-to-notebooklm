@@ -19,6 +19,19 @@ The easiest way to use this tool is to copy the pre-configured template:
 
 ---
 
+## Quick Start (Chrome Extension)
+
+For developers who want to self-host the Chrome extension:
+
+1. **Fork** this repository
+2. **Create OAuth credentials** — see [Google Cloud Setup](docs/google-cloud-setup.md)
+3. **Add your client ID** — edit `public/manifest.json` → `oauth2.client_id`
+4. **Build**: `npm install && npm run build`
+5. **Load in Chrome**: go to `chrome://extensions` → Developer mode → Load unpacked → select `dist/`
+6. **Configure**: the extension opens a Setup wizard — enter your Apps Script deployment URL
+
+---
+
 ## 🏗 Why this tool?
 
 NotebookLM is powerful, but it limits the number of sources you can add (50 sources max). By grouping months of meetings (yours and your team's) into a single "brain" document, you enable the AI to make long-term connections without ever hitting source limits.
