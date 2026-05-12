@@ -53,7 +53,7 @@ export function Analytics() {
           <CardTitle>Document Size</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-3xl font-bold">{(docSize / 1024).toFixed(1)} KB</p>
+          <p className="text-3xl font-bold">{((docSize ?? 0) / 1024).toFixed(1)} KB</p>
         </CardContent>
       </Card>
     </div>

@@ -13,7 +13,10 @@ function App() {
       getHistory().catch(console.error);
       getFiles().catch(console.error);
     }
-  }, [isAuthenticated, getStatus, getHistory, getFiles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // API functions are useCallback refs that may be recreated on store updates;
+    // intentionally depend only on isAuthenticated to avoid re-run loops.
+  }, [isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
   
   return <Dashboard />;
 }

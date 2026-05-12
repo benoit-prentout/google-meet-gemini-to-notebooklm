@@ -9,7 +9,7 @@ import { useApi } from '@/hooks/useApi';
 import { Save } from 'lucide-react';
 
 export function Settings() {
-  const { settings, updateSetting } = useSettingsStore();
+  const { settings, updateSetting, setError } = useSettingsStore();
   const { updateSettings } = useApi();
   const [saving, setSaving] = useState(false);
 
@@ -25,8 +25,11 @@ export function Settings() {
 
   const handleSave = async () => {
     setSaving(true);
+    setError(null);
     try {
       await updateSettings(settings);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save settings');
     } finally {
       setSaving(false);
     }
@@ -120,7 +123,10 @@ export function Settings() {
                 id="maxAgeDays"
                 type="number"
                 value={settings.maxAgeDays}
-                onChange={(e) => updateSetting('maxAgeDays', parseInt(e.target.value) || 30)}
+                onChange={(e) => {
+                  const parsed = parseInt(e.target.value, 10);
+                  updateSetting('maxAgeDays', isNaN(parsed) ? 0 : parsed);
+                }}
               />
             </div>
           </div>
