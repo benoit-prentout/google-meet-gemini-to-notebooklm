@@ -89,7 +89,7 @@ export function Settings() {
             </div>
             <Switch
               checked={settings.enableUpdateDetection}
-              onCheckedChange={(checked) => updateSetting('enableUpdateDetection', checked)}
+              onClick={() => updateSetting('enableUpdateDetection', !settings.enableUpdateDetection)}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -101,7 +101,7 @@ export function Settings() {
             </div>
             <Switch
               checked={settings.enableMonthlyArchive}
-              onCheckedChange={(checked) => updateSetting('enableMonthlyArchive', checked)}
+              onClick={() => updateSetting('enableMonthlyArchive', !settings.enableMonthlyArchive)}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
