@@ -48,6 +48,9 @@ export function SetupWizard() {
       setDeploymentUrl(url.trim());
       await signIn();
     } catch (err) {
+      // Roll back the stored URL so the user can retry with a corrected URL
+      chrome.storage.sync.remove('deploymentUrl');
+      setDeploymentUrl(null);
       setError(err instanceof Error ? err.message : 'Setup failed. Please try again.');
     } finally {
       setSaving(false);

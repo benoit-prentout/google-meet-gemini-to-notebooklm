@@ -143,29 +143,49 @@ function getStatus() {
 function getSettings() {
   return {
     success: true,
-    settings: { ...CONFIG }
+    settings: {
+      sourceFolderName: CONFIG.SOURCE_FOLDER_NAME,
+      maxFilesPerRun: CONFIG.MAX_FILES_PER_RUN,
+      archiveThresholdChars: CONFIG.ARCHIVE_THRESHOLD_CHARS,
+      enableMonthlyArchive: CONFIG.ENABLE_MONTHLY_ARCHIVE,
+      enableUpdateDetection: CONFIG.ENABLE_UPDATE_DETECTION,
+      maxAgeDays: CONFIG.MAX_AGE_DAYS,
+      archiveFolderId: CONFIG.ARCHIVE_FOLDER_ID,
+      masterDocId: CONFIG.MASTER_DOC_ID,
+      maxRetries: CONFIG.MAX_RETRIES,
+      historySize: CONFIG.HISTORY_SIZE
+    }
   };
 }
 
-var ALLOWED_SETTINGS_KEYS_ = [
-  'MAX_FILES_PER_RUN', 'ARCHIVE_THRESHOLD_CHARS', 'ENABLE_MONTHLY_ARCHIVE',
-  'ENABLE_UPDATE_DETECTION', 'MAX_AGE_DAYS', 'ARCHIVE_FOLDER_ID',
-  'MASTER_DOC_ID', 'MAX_RETRIES', 'HISTORY_SIZE'
-];
+var SETTINGS_KEY_MAP_ = {
+  sourceFolderName: 'SOURCE_FOLDER_NAME',
+  maxFilesPerRun: 'MAX_FILES_PER_RUN',
+  archiveThresholdChars: 'ARCHIVE_THRESHOLD_CHARS',
+  enableMonthlyArchive: 'ENABLE_MONTHLY_ARCHIVE',
+  enableUpdateDetection: 'ENABLE_UPDATE_DETECTION',
+  maxAgeDays: 'MAX_AGE_DAYS',
+  archiveFolderId: 'ARCHIVE_FOLDER_ID',
+  masterDocId: 'MASTER_DOC_ID',
+  maxRetries: 'MAX_RETRIES',
+  historySize: 'HISTORY_SIZE'
+};
 
 function updateSettings(settings) {
-  var sanitized = {};
-  for (var i = 0; i < ALLOWED_SETTINGS_KEYS_.length; i++) {
-    var key = ALLOWED_SETTINGS_KEYS_[i];
-    if (key in settings) sanitized[key] = settings[key];
+  var toSave = {};
+  for (var camelKey in SETTINGS_KEY_MAP_) {
+    if (camelKey in settings) {
+      var configKey = SETTINGS_KEY_MAP_[camelKey];
+      CONFIG[configKey] = settings[camelKey];
+      toSave[configKey] = settings[camelKey];
+    }
   }
   var props = PropertiesService.getScriptProperties();
-  Object.assign(CONFIG, sanitized);
-  var toSave = {};
-  for (var j = 0; j < ALLOWED_SETTINGS_KEYS_.length; j++) {
-    toSave[ALLOWED_SETTINGS_KEYS_[j]] = CONFIG[ALLOWED_SETTINGS_KEYS_[j]];
-  }
-  props.setProperty('CONFIG_OVERRIDES', JSON.stringify(toSave));
+  // Merge toSave into existing persisted overrides
+  var existing = {};
+  try { existing = JSON.parse(props.getProperty('CONFIG_OVERRIDES') || '{}'); } catch (_) {}
+  Object.assign(existing, toSave);
+  props.setProperty('CONFIG_OVERRIDES', JSON.stringify(existing));
   return { success: true, message: 'Settings updated' };
 }
 

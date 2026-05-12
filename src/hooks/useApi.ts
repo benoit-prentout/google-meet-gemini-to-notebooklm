@@ -61,7 +61,7 @@ export function useApi() {
 
     try {
       const response = await api.getHistory(accessToken);
-      setHistory(response.history);
+      setHistory(response.history ?? []);
       return response.history;
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to get history');
@@ -74,7 +74,7 @@ export function useApi() {
 
     try {
       const response = await api.getFiles(accessToken);
-      setFiles(response.files);
+      setFiles(response.files ?? []);
       return response.files;
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to get files');
