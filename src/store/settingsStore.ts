@@ -5,6 +5,7 @@ import type { Settings, SyncEvent, SyncFile } from '@/types';
 interface SettingsState {
   isAuthenticated: boolean;
   accessToken: string | null;
+  deploymentUrl: string | null;
   settings: Settings | null;
   lastSync: string | null;
   docSize: number;
@@ -12,8 +13,9 @@ interface SettingsState {
   files: SyncFile[];
   isLoading: boolean;
   error: string | null;
-  
+
   setAuthenticated: (token: string) => void;
+  setDeploymentUrl: (url: string | null) => void;
   setSettings: (settings: Settings) => void;
   updateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   setHistory: (history: SyncEvent[]) => void;
@@ -30,6 +32,7 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       isAuthenticated: false,
       accessToken: null,
+      deploymentUrl: null,
       settings: null,
       lastSync: null,
       docSize: 0,
@@ -39,7 +42,9 @@ export const useSettingsStore = create<SettingsState>()(
       error: null,
       
       setAuthenticated: (token) => set({ accessToken: token, isAuthenticated: true }),
-      
+
+      setDeploymentUrl: (url) => set({ deploymentUrl: url }),
+
       setSettings: (settings) => set({ settings }),
       
       updateSetting: (key, value) =>
