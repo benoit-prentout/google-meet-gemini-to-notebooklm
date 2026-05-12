@@ -29,7 +29,7 @@ describe('api - getDeploymentUrl / fetchApi', () => {
     (chrome.storage.sync.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       deploymentUrl: 'https://script.google.com/macros/s/test/exec',
     });
-    global.fetch = vi.fn().mockResolvedValueOnce({
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({
         success: true,
@@ -77,7 +77,7 @@ describe('api - getDeploymentUrl / fetchApi', () => {
     (chrome.storage.sync.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       deploymentUrl: 'https://script.google.com/macros/s/test/exec',
     });
-    global.fetch = vi.fn().mockResolvedValueOnce({
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({
       ok: false,
       status: 403,
       statusText: 'Forbidden',
@@ -90,7 +90,7 @@ describe('api - getDeploymentUrl / fetchApi', () => {
     (chrome.storage.sync.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       deploymentUrl: 'https://script.google.com/macros/s/test/exec',
     });
-    global.fetch = vi.fn().mockResolvedValueOnce({
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({ success: false, error: 'Script error' }),
     });
