@@ -35,6 +35,36 @@ const CONFIG = {
   MASTER_DOC_ID: '',
 };
 
+(function() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty('CONFIG_OVERRIDES');
+    if (raw) Object.assign(CONFIG, JSON.parse(raw));
+  } catch (_) {}
+})();
+
+function validateCaller_(accessToken) {
+  if (!accessToken) return false;
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('auth_' + accessToken.slice(-16));
+  if (cached === 'ok') return true;
+  try {
+    const resp = UrlFetchApp.fetch(
+      'https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' + encodeURIComponent(accessToken),
+      { muteHttpExceptions: true }
+    );
+    if (resp.getResponseCode() !== 200) return false;
+    const info = JSON.parse(resp.getContentText());
+    const ownerEmail = Session.getActiveUser().getEmail();
+    if (info.email && ownerEmail && info.email === ownerEmail) {
+      cache.put('auth_' + accessToken.slice(-16), 'ok', 300);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 // ─── REST API ENDPOINTS ───────────────────────────────────────────────────────
 
 function doGet(e) {
@@ -46,6 +76,12 @@ function doPost(e) {
 }
 
 function handleRequest(e) {
+  const authToken = e.parameter.token || '';
+  if (!validateCaller_(authToken)) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unauthorized' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   const action = e.parameter.action;
   let result;
 
@@ -64,7 +100,7 @@ function handleRequest(e) {
         result = getHistory();
         break;
       case 'settings':
-        if (e.method === 'POST') {
+        if (e.postData) {
           result = updateSettings(JSON.parse(e.postData.contents));
         } else {
           result = getSettings();
@@ -107,47 +143,63 @@ function getSettings() {
   };
 }
 
+var ALLOWED_SETTINGS_KEYS_ = [
+  'MAX_FILES_PER_RUN', 'ARCHIVE_THRESHOLD_CHARS', 'ENABLE_MONTHLY_ARCHIVE',
+  'ENABLE_UPDATE_DETECTION', 'MAX_AGE_DAYS', 'ARCHIVE_FOLDER_ID',
+  'MASTER_DOC_ID', 'MAX_RETRIES', 'HISTORY_SIZE'
+];
+
 function updateSettings(settings) {
-  const props = PropertiesService.getScriptProperties();
-
-  Object.assign(CONFIG, settings);
+  var sanitized = {};
+  for (var i = 0; i < ALLOWED_SETTINGS_KEYS_.length; i++) {
+    var key = ALLOWED_SETTINGS_KEYS_[i];
+    if (key in settings) sanitized[key] = settings[key];
+  }
+  var props = PropertiesService.getScriptProperties();
+  Object.assign(CONFIG, sanitized);
   props.setProperty('CONFIG_OVERRIDES', JSON.stringify(CONFIG));
-
-  return {
-    success: true,
-    message: 'Settings updated'
-  };
+  return { success: true, message: 'Settings updated' };
 }
 
 function getHistory() {
-  const props = PropertiesService.getScriptProperties();
-  const history = JSON.parse(props.getProperty('syncHistory') || '[]');
-
-  return {
-    success: true,
-    history: history
-  };
+  var props = PropertiesService.getScriptProperties();
+  var raw = JSON.parse(props.getProperty('syncHistory') || '[]');
+  var history = raw.map(function(r, i) {
+    var filesProcessed = (r.synced || 0) + (r.updated || 0);
+    var status = r.errors > 0 ? (filesProcessed > 0 ? 'partial' : 'error') : 'success';
+    var message = (r.synced || 0) + ' synced, ' + (r.updated || 0) + ' updated' + (r.errors ? ', ' + r.errors + ' errors' : '');
+    return {
+      id: r.date + '_' + i,
+      timestamp: r.date,
+      filesProcessed: filesProcessed,
+      status: status,
+      message: message
+    };
+  });
+  return { success: true, history: history };
 }
 
 function getFiles() {
-  const props = PropertiesService.getScriptProperties();
-  const allProps = props.getProperties();
-  const files = [];
-
-  for (const key in allProps) {
-    if (key.indexOf('SYNC_') === 0) {
-      const fileId = key.substring(5);
+  var props = PropertiesService.getScriptProperties();
+  var allProps = props.getProperties();
+  var files = [];
+  for (var key in allProps) {
+    if (key.indexOf('SYNC_') !== 0) continue;
+    var fileId = key.substring(5);
+    var syncedAt = new Date(parseInt(allProps[key], 10)).toISOString();
+    try {
+      var meta = Drive.Files.get(fileId, { fields: 'name,size' });
       files.push({
         id: fileId,
-        syncedAt: new Date(parseInt(allProps[key], 10)).toISOString()
+        name: meta.name || fileId,
+        lastSynced: syncedAt,
+        size: parseInt(meta.size || '0', 10)
       });
+    } catch (_) {
+      files.push({ id: fileId, name: fileId, lastSynced: syncedAt, size: 0 });
     }
   }
-
-  return {
-    success: true,
-    files: files
-  };
+  return { success: true, files: files };
 }
 
 function runSync() {
@@ -163,9 +215,8 @@ function runSync() {
 function runArchive() {
   const docId = CONFIG.MASTER_DOC_ID || DocumentApp.getActiveDocument().getId();
   const timezone = Session.getScriptTimeZone() || 'UTC';
-  PropertiesService.getScriptProperties().setProperty('estimatedChars', String(Number.MAX_SAFE_INTEGER));
 
-  checkAndArchive_(docId, timezone);
+  checkAndArchive_(docId, timezone, true);
 
   return {
     success: true,
@@ -591,7 +642,7 @@ function forceArchive() {
 /**
  * Checks document size and archives if threshold is reached.
  */
-function checkAndArchive_(docId, timezone) {
+function checkAndArchive_(docId, timezone, force) {
   const props = PropertiesService.getScriptProperties();
   const estimatedChars = parseInt(props.getProperty('estimatedChars') || '0', 10);
   
@@ -612,7 +663,7 @@ function checkAndArchive_(docId, timezone) {
   }
 
   // 2. Check for Size Archive
-  if (!shouldArchive && CONFIG.ARCHIVE_THRESHOLD_CHARS > 0 && estimatedChars >= CONFIG.ARCHIVE_THRESHOLD_CHARS) {
+  if (!shouldArchive && CONFIG.ARCHIVE_THRESHOLD_CHARS > 0 && (force || estimatedChars >= CONFIG.ARCHIVE_THRESHOLD_CHARS)) {
     shouldArchive = true;
     archiveReason = `Size limit reached (~${estimatedChars} chars)`;
   }
