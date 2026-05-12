@@ -13,15 +13,14 @@ function App() {
 
   // On mount, read deploymentUrl from chrome.storage.sync and hydrate the store
   useEffect(() => {
+    let isMounted = true;
     chrome.storage.sync.get('deploymentUrl', (result) => {
-      if (result.deploymentUrl) {
-        setDeploymentUrl(result.deploymentUrl as string);
-      }
+      if (!isMounted) return;
+      if (result.deploymentUrl) setDeploymentUrl(result.deploymentUrl as string);
       setStorageChecked(true);
     });
-  // Run once on mount only
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => { isMounted = false; };
+  }, [setDeploymentUrl]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -36,7 +35,11 @@ function App() {
 
   // Wait until we've checked storage before rendering
   if (!storageChecked) {
-    return null;
+    return (
+      <div className="flex items-center justify-center h-24 w-96">
+        <span className="text-sm text-muted-foreground">Loading...</span>
+      </div>
+    );
   }
 
   // No deployment URL configured yet — show setup wizard

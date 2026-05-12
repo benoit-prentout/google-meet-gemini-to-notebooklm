@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useSettingsStore } from '@/store/settingsStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,14 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function SetupWizard() {
   const { signIn } = useAuth();
+  const { setDeploymentUrl } = useSettingsStore();
   const [url, setUrl] = useState('');
   const [urlError, setUrlError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function validateUrl(value: string): string | null {
-    if (!value.trim()) return 'Deployment URL is required';
-    if (!value.startsWith('https://script.google.com/')) {
+    const trimmed = value.trim();
+    if (!trimmed) return 'Deployment URL is required';
+    if (!trimmed.startsWith('https://script.google.com/')) {
       return 'URL must start with https://script.google.com/';
     }
     return null;
@@ -34,6 +37,7 @@ export function SetupWizard() {
     }
     setSaving(true);
     setError(null);
+    useSettingsStore.getState().setError(null);
     try {
       await new Promise<void>((resolve, reject) => {
         chrome.storage.sync.set({ deploymentUrl: url.trim() }, () => {
@@ -41,6 +45,7 @@ export function SetupWizard() {
           else resolve();
         });
       });
+      setDeploymentUrl(url.trim());
       await signIn();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Setup failed. Please try again.');
