@@ -25,7 +25,275 @@ const CONFIG = {
 
   // Number of syncs kept in history.
   HISTORY_SIZE: 20,
+
+  // Google Drive folder ID for storing archive documents.
+  // If set, archives will be moved to this folder.
+  ARCHIVE_FOLDER_ID: '',
+
+  // Master document ID for REST API mode.
+  // When set, the script operates on this document instead of the active one.
+  MASTER_DOC_ID: '',
 };
+
+// ─── REST API ENDPOINTS ───────────────────────────────────────────────────────
+
+function doGet(e) {
+  return handleRequest(e);
+}
+
+function doPost(e) {
+  return handleRequest(e);
+}
+
+function handleRequest(e) {
+  const action = e.parameter.action;
+  let result;
+
+  try {
+    switch (action) {
+      case 'status':
+        result = getStatus();
+        break;
+      case 'sync':
+        result = runSync();
+        break;
+      case 'archive':
+        result = runArchive();
+        break;
+      case 'history':
+        result = getHistory();
+        break;
+      case 'settings':
+        if (e.method === 'POST') {
+          result = updateSettings(JSON.parse(e.postData.contents));
+        } else {
+          result = getSettings();
+        }
+        break;
+      case 'files':
+        result = getFiles();
+        break;
+      default:
+        throw new Error(`Unknown action: ${action}`);
+    }
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getStatus() {
+  const props = PropertiesService.getScriptProperties();
+  const estimatedChars = parseInt(props.getProperty('estimatedChars') || '0', 10);
+  const lastSync = props.getProperty('lastSync');
+  const isConfigured = Boolean(CONFIG.MASTER_DOC_ID && CONFIG.ARCHIVE_FOLDER_ID);
+
+  return {
+    success: true,
+    lastSync: lastSync ? new Date(parseInt(lastSync, 10)).toISOString() : null,
+    docSize: estimatedChars,
+    isConfigured: isConfigured
+  };
+}
+
+function getSettings() {
+  return {
+    success: true,
+    settings: { ...CONFIG }
+  };
+}
+
+function updateSettings(settings) {
+  const props = PropertiesService.getScriptProperties();
+
+  Object.assign(CONFIG, settings);
+  props.setProperty('CONFIG_OVERRIDES', JSON.stringify(CONFIG));
+
+  return {
+    success: true,
+    message: 'Settings updated'
+  };
+}
+
+function getHistory() {
+  const props = PropertiesService.getScriptProperties();
+  const history = JSON.parse(props.getProperty('syncHistory') || '[]');
+
+  return {
+    success: true,
+    history: history
+  };
+}
+
+function getFiles() {
+  const props = PropertiesService.getScriptProperties();
+  const allProps = props.getProperties();
+  const files = [];
+
+  for (const key in allProps) {
+    if (key.indexOf('SYNC_') === 0) {
+      const fileId = key.substring(5);
+      files.push({
+        id: fileId,
+        syncedAt: new Date(parseInt(allProps[key], 10)).toISOString()
+      });
+    }
+  }
+
+  return {
+    success: true,
+    files: files
+  };
+}
+
+function runSync() {
+  const docId = CONFIG.MASTER_DOC_ID || DocumentApp.getActiveDocument().getId();
+  const result = appendMeetNotesToMasterRestAPI(docId);
+
+  return {
+    success: true,
+    result: result
+  };
+}
+
+function runArchive() {
+  const docId = CONFIG.MASTER_DOC_ID || DocumentApp.getActiveDocument().getId();
+  const timezone = Session.getScriptTimeZone() || 'UTC';
+  PropertiesService.getScriptProperties().setProperty('estimatedChars', String(Number.MAX_SAFE_INTEGER));
+
+  checkAndArchive_(docId, timezone);
+
+  return {
+    success: true,
+    message: 'Archive created'
+  };
+}
+
+function appendMeetNotesToMasterRestAPI(docId) {
+  const startTime = Date.now();
+  const timezone = Session.getScriptTimeZone() || 'UTC';
+  const props = PropertiesService.getScriptProperties();
+
+  const folderId = getFolderIdByName_(CONFIG.SOURCE_FOLDER_NAME);
+
+  let query = `mimeType = 'application/vnd.google-apps.document' and trashed = false`;
+  let folderQuery = folderId ? `'${folderId}' in parents` : '';
+  let nameQuery = `(name contains 'Notes de la réunion' or name contains 'Meeting notes' or name contains 'Notes for' or name contains 'Notes by Gemini' or name contains 'Notes par Gemini')`;
+
+  if (folderQuery) {
+    query += ` and (${folderQuery} or ${nameQuery})`;
+  } else {
+    query += ` and ${nameQuery}`;
+  }
+
+  if (CONFIG.MAX_AGE_DAYS > 0) {
+    const cutoff = new Date(Date.now() - CONFIG.MAX_AGE_DAYS * 86400000).toISOString();
+    query += ` and modifiedTime > '${cutoff}'`;
+  }
+
+  const result = apiCall_(() => Drive.Files.list({
+    q: query,
+    pageSize: 100,
+    fields: 'files(id, name, createdTime, modifiedTime)',
+    orderBy: 'createdTime desc',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true
+  }));
+
+  if (!result.files || result.files.length === 0) {
+    return { synced: 0, updated: 0, errors: 0, message: 'No meetings found' };
+  }
+
+  const toProcess = [];
+  const updatedIds = [];
+
+  for (const file of result.files) {
+    const lastSyncTime = props.getProperty('SYNC_' + file.id);
+
+    if (!lastSyncTime) {
+      toProcess.push(file);
+    } else if (CONFIG.ENABLE_UPDATE_DETECTION) {
+      const modifiedDate = new Date(file.modifiedTime).getTime();
+      const syncDate = parseInt(lastSyncTime, 10);
+      const GRACE_MS = 5 * 60 * 1000;
+
+      if (modifiedDate > syncDate + GRACE_MS) {
+        toProcess.push(file);
+        updatedIds.push(file.id);
+      }
+    }
+
+    if (toProcess.length >= CONFIG.MAX_FILES_PER_RUN) break;
+  }
+
+  if (toProcess.length === 0) {
+    return { synced: 0, updated: 0, errors: 0, message: 'All files are already synced' };
+  }
+
+  if (CONFIG.ARCHIVE_THRESHOLD_CHARS > 0) {
+    checkAndArchive_(docId, timezone);
+  }
+
+  const filesToProcess = toProcess.reverse();
+  const requests = [];
+  const syncedEntries = [];
+  let errorCount = 0;
+
+  for (const file of filesToProcess) {
+    try {
+      const rawText = apiCall_(() => exportFileAsText_(file.id));
+      const participants = extractParticipants_(rawText);
+      const cleanText = cleanGeminiText_(rawText);
+      const isUpdate = updatedIds.indexOf(file.id) !== -1;
+      const dateStr = Utilities.formatDate(new Date(file.createdTime), timezone, 'yyyy-MM-dd');
+
+      const blockText = buildBlock_(file.name, dateStr, participants, cleanText, isUpdate);
+
+      requests.push({
+        insertText: {
+          location: { index: 1 },
+          text: blockText,
+        },
+      });
+
+      props.setProperty('SYNC_' + file.id, String(new Date(file.modifiedTime).getTime()));
+      syncedEntries.push({ name: file.name, date: dateStr });
+
+    } catch (e) {
+      errorCount++;
+    }
+  }
+
+  if (requests.length > 0) {
+    apiCall_(() => Docs.Documents.batchUpdate({ requests }, docId));
+    updateDocSizeEstimate_(requests);
+
+    try {
+      updateSummaryTable_(docId, syncedEntries);
+    } catch (e) {}
+
+    if (CONFIG.ENABLE_NOTIFICATIONS) {
+      try {
+        sendNotification_(syncedEntries.map(e => e.name), updatedIds, errorCount, `https://docs.google.com/document/d/${docId}/edit`);
+      } catch (e) {}
+    }
+
+    const duration = Date.now() - startTime;
+    logSyncRun_({ date: new Date().toISOString(), synced: syncedEntries.length, updated: updatedIds.length, errors: errorCount, duration });
+    props.setProperty('lastSync', String(Date.now()));
+  }
+
+  return {
+    synced: syncedEntries.length,
+    updated: updatedIds.length,
+    errors: errorCount,
+    duration: Date.now() - startTime
+  };
+}
 
 // ─── MENU ─────────────────────────────────────────────────────────────────────
 
@@ -298,6 +566,7 @@ function appendMeetNotesToMaster() {
     const duration = Date.now() - startTime;
     console.timeEnd('Total Sync');
     logSyncRun_({ date: new Date().toISOString(), synced: syncedEntries.length, updated: updatedIds.length, errors: errorCount, duration });
+    props.setProperty('lastSync', String(Date.now()));
 
     const errorMsg = errorCount > 0 ? ` ⚠️ ${errorCount} error(s) — check Stackdriver logs.` : '';
     showAlert_(`✅ ${syncedEntries.length} meeting(s) added.${errorMsg}`);
@@ -357,6 +626,18 @@ function checkAndArchive_(docId, timezone) {
 
     const copy = apiCall_(() => Drive.Files.copy({ name: `Meeting Notes Archive — ${dateStr}` }, docId));
     const archiveUrl = `https://docs.google.com/document/d/${copy.id}/edit`;
+
+    // Move to configured archive folder if set
+    if (CONFIG.ARCHIVE_FOLDER_ID) {
+      try {
+        const archiveFolder = DriveApp.getFolderById(CONFIG.ARCHIVE_FOLDER_ID);
+        const archiveDoc = DriveApp.getFileById(copy.id);
+        archiveFolder.addFile(archiveDoc);
+        DriveApp.removeFile(archiveDoc);
+      } catch (e) {
+        console.error(`Failed to move archive to folder: ${e.message}`);
+      }
+    }
 
     // Mark the archive as synced locally
     props.setProperty('SYNC_' + copy.id, String(Date.now()));
