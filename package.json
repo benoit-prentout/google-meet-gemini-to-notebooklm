@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package": "npm run build && cd dist && zip -r ../meet-gemini-notebooklm.zip . && cd .."
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
