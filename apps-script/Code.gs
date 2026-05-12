@@ -25,7 +25,354 @@ const CONFIG = {
 
   // Number of syncs kept in history.
   HISTORY_SIZE: 20,
+
+  // Google Drive folder ID for storing archive documents.
+  // If set, archives will be moved to this folder.
+  ARCHIVE_FOLDER_ID: '',
+
+  // Master document ID for REST API mode.
+  // When set, the script operates on this document instead of the active one.
+  MASTER_DOC_ID: '',
 };
+
+(function() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty('CONFIG_OVERRIDES');
+    if (raw) Object.assign(CONFIG, JSON.parse(raw));
+  } catch (_) {}
+})();
+
+function validateCaller_(accessToken) {
+  if (!accessToken) return false;
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('auth_' + accessToken.slice(0, 32));
+  if (cached === 'ok') return true;
+  try {
+    const resp = UrlFetchApp.fetch(
+      'https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=' + encodeURIComponent(accessToken),
+      { muteHttpExceptions: true }
+    );
+    if (resp.getResponseCode() !== 200) return false;
+    const info = JSON.parse(resp.getContentText());
+    const ownerEmail = Session.getActiveUser().getEmail();
+    if (!ownerEmail) {
+      console.warn('validateCaller_: Session.getActiveUser().getEmail() returned empty — auth will fail until resolved');
+      return false;
+    }
+    if (info.email && info.email === ownerEmail) {
+      cache.put('auth_' + accessToken.slice(0, 32), 'ok', 300);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+// ─── REST API ENDPOINTS ───────────────────────────────────────────────────────
+
+function doGet(e) {
+  return handleRequest(e);
+}
+
+function doPost(e) {
+  return handleRequest(e);
+}
+
+function handleRequest(e) {
+  const authToken = e.parameter.token || '';
+  if (!validateCaller_(authToken)) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unauthorized' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const action = e.parameter.action;
+  let result;
+
+  try {
+    switch (action) {
+      case 'status':
+        result = getStatus();
+        break;
+      case 'sync':
+        result = runSync();
+        break;
+      case 'archive':
+        result = runArchive();
+        break;
+      case 'history':
+        result = getHistory();
+        break;
+      case 'settings':
+        if (e.postData) {
+          result = updateSettings(JSON.parse(e.postData.contents));
+        } else {
+          result = getSettings();
+        }
+        break;
+      case 'files':
+        result = getFiles();
+        break;
+      default:
+        throw new Error(`Unknown action: ${action}`);
+    }
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.message
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getStatus() {
+  const props = PropertiesService.getScriptProperties();
+  const estimatedChars = parseInt(props.getProperty('estimatedChars') || '0', 10);
+  const lastSync = props.getProperty('lastSync');
+  const isConfigured = Boolean(CONFIG.MASTER_DOC_ID && CONFIG.ARCHIVE_FOLDER_ID);
+
+  return {
+    success: true,
+    lastSync: lastSync ? new Date(parseInt(lastSync, 10)).toISOString() : null,
+    docSize: estimatedChars,
+    isConfigured: isConfigured
+  };
+}
+
+function getSettings() {
+  return {
+    success: true,
+    settings: {
+      sourceFolderName: CONFIG.SOURCE_FOLDER_NAME,
+      maxFilesPerRun: CONFIG.MAX_FILES_PER_RUN,
+      archiveThresholdChars: CONFIG.ARCHIVE_THRESHOLD_CHARS,
+      enableMonthlyArchive: CONFIG.ENABLE_MONTHLY_ARCHIVE,
+      enableUpdateDetection: CONFIG.ENABLE_UPDATE_DETECTION,
+      maxAgeDays: CONFIG.MAX_AGE_DAYS,
+      archiveFolderId: CONFIG.ARCHIVE_FOLDER_ID,
+      masterDocId: CONFIG.MASTER_DOC_ID,
+      maxRetries: CONFIG.MAX_RETRIES,
+      historySize: CONFIG.HISTORY_SIZE
+    }
+  };
+}
+
+var SETTINGS_KEY_MAP_ = {
+  sourceFolderName: 'SOURCE_FOLDER_NAME',
+  maxFilesPerRun: 'MAX_FILES_PER_RUN',
+  archiveThresholdChars: 'ARCHIVE_THRESHOLD_CHARS',
+  enableMonthlyArchive: 'ENABLE_MONTHLY_ARCHIVE',
+  enableUpdateDetection: 'ENABLE_UPDATE_DETECTION',
+  maxAgeDays: 'MAX_AGE_DAYS',
+  archiveFolderId: 'ARCHIVE_FOLDER_ID',
+  masterDocId: 'MASTER_DOC_ID',
+  maxRetries: 'MAX_RETRIES',
+  historySize: 'HISTORY_SIZE'
+};
+
+function updateSettings(settings) {
+  var toSave = {};
+  for (var camelKey in SETTINGS_KEY_MAP_) {
+    if (camelKey in settings) {
+      var configKey = SETTINGS_KEY_MAP_[camelKey];
+      CONFIG[configKey] = settings[camelKey];
+      toSave[configKey] = settings[camelKey];
+    }
+  }
+  var props = PropertiesService.getScriptProperties();
+  // Merge toSave into existing persisted overrides
+  var existing = {};
+  try { existing = JSON.parse(props.getProperty('CONFIG_OVERRIDES') || '{}'); } catch (_) {}
+  Object.assign(existing, toSave);
+  props.setProperty('CONFIG_OVERRIDES', JSON.stringify(existing));
+  return { success: true, message: 'Settings updated' };
+}
+
+function getHistory() {
+  var props = PropertiesService.getScriptProperties();
+  var raw = JSON.parse(props.getProperty('syncHistory') || '[]');
+  var history = raw.map(function(r, i) {
+    var filesProcessed = (r.synced || 0) + (r.updated || 0);
+    var status = r.errors > 0 ? (filesProcessed > 0 ? 'partial' : 'error') : 'success';
+    var message = (r.synced || 0) + ' synced, ' + (r.updated || 0) + ' updated' + (r.errors ? ', ' + r.errors + ' errors' : '');
+    return {
+      id: r.date,
+      timestamp: r.date,
+      filesProcessed: filesProcessed,
+      status: status,
+      message: message
+    };
+  });
+  return { success: true, history: history };
+}
+
+function getFiles() {
+  var props = PropertiesService.getScriptProperties();
+  var allProps = props.getProperties();
+  var files = [];
+  for (var key in allProps) {
+    if (key.indexOf('SYNC_') !== 0) continue;
+    var fileId = key.substring(5);
+    var syncedAt = new Date(parseInt(allProps[key], 10)).toISOString();
+    try {
+      var meta = Drive.Files.get(fileId, { fields: 'name,size' });
+      files.push({
+        id: fileId,
+        name: meta.name || fileId,
+        lastSynced: syncedAt,
+        size: parseInt(meta.size || '0', 10)
+      });
+    } catch (_) {
+      files.push({ id: fileId, name: fileId, lastSynced: syncedAt, size: 0 });
+    }
+  }
+  return { success: true, files: files };
+}
+
+function runSync() {
+  const docId = CONFIG.MASTER_DOC_ID || DocumentApp.getActiveDocument().getId();
+  const result = appendMeetNotesToMasterRestAPI(docId);
+
+  return {
+    success: true,
+    result: result
+  };
+}
+
+function runArchive() {
+  const docId = CONFIG.MASTER_DOC_ID || DocumentApp.getActiveDocument().getId();
+  const timezone = Session.getScriptTimeZone() || 'UTC';
+
+  checkAndArchive_(docId, timezone, true);
+
+  return {
+    success: true,
+    message: 'Archive created'
+  };
+}
+
+function appendMeetNotesToMasterRestAPI(docId) {
+  const startTime = Date.now();
+  const timezone = Session.getScriptTimeZone() || 'UTC';
+  const props = PropertiesService.getScriptProperties();
+
+  const folderId = getFolderIdByName_(CONFIG.SOURCE_FOLDER_NAME);
+
+  let query = `mimeType = 'application/vnd.google-apps.document' and trashed = false`;
+  let folderQuery = folderId ? `'${folderId}' in parents` : '';
+  let nameQuery = `(name contains 'Notes de la réunion' or name contains 'Meeting notes' or name contains 'Notes for' or name contains 'Notes by Gemini' or name contains 'Notes par Gemini')`;
+
+  if (folderQuery) {
+    query += ` and (${folderQuery} or ${nameQuery})`;
+  } else {
+    query += ` and ${nameQuery}`;
+  }
+
+  if (CONFIG.MAX_AGE_DAYS > 0) {
+    const cutoff = new Date(Date.now() - CONFIG.MAX_AGE_DAYS * 86400000).toISOString();
+    query += ` and modifiedTime > '${cutoff}'`;
+  }
+
+  const result = apiCall_(() => Drive.Files.list({
+    q: query,
+    pageSize: 100,
+    fields: 'files(id, name, createdTime, modifiedTime)',
+    orderBy: 'createdTime desc',
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true
+  }));
+
+  if (!result.files || result.files.length === 0) {
+    return { synced: 0, updated: 0, errors: 0, message: 'No meetings found' };
+  }
+
+  const toProcess = [];
+  const updatedIds = [];
+
+  for (const file of result.files) {
+    const lastSyncTime = props.getProperty('SYNC_' + file.id);
+
+    if (!lastSyncTime) {
+      toProcess.push(file);
+    } else if (CONFIG.ENABLE_UPDATE_DETECTION) {
+      const modifiedDate = new Date(file.modifiedTime).getTime();
+      const syncDate = parseInt(lastSyncTime, 10);
+      const GRACE_MS = 5 * 60 * 1000;
+
+      if (modifiedDate > syncDate + GRACE_MS) {
+        toProcess.push(file);
+        updatedIds.push(file.id);
+      }
+    }
+
+    if (toProcess.length >= CONFIG.MAX_FILES_PER_RUN) break;
+  }
+
+  if (toProcess.length === 0) {
+    return { synced: 0, updated: 0, errors: 0, message: 'All files are already synced' };
+  }
+
+  if (CONFIG.ARCHIVE_THRESHOLD_CHARS > 0) {
+    checkAndArchive_(docId, timezone);
+  }
+
+  const filesToProcess = toProcess.reverse();
+  const requests = [];
+  const syncedEntries = [];
+  let errorCount = 0;
+
+  for (const file of filesToProcess) {
+    try {
+      const rawText = apiCall_(() => exportFileAsText_(file.id));
+      const participants = extractParticipants_(rawText);
+      const cleanText = cleanGeminiText_(rawText);
+      const isUpdate = updatedIds.indexOf(file.id) !== -1;
+      const dateStr = Utilities.formatDate(new Date(file.createdTime), timezone, 'yyyy-MM-dd');
+
+      const blockText = buildBlock_(file.name, dateStr, participants, cleanText, isUpdate);
+
+      requests.push({
+        insertText: {
+          location: { index: 1 },
+          text: blockText,
+        },
+      });
+
+      props.setProperty('SYNC_' + file.id, String(new Date(file.modifiedTime).getTime()));
+      syncedEntries.push({ name: file.name, date: dateStr });
+
+    } catch (e) {
+      errorCount++;
+    }
+  }
+
+  if (requests.length > 0) {
+    apiCall_(() => Docs.Documents.batchUpdate({ requests }, docId));
+    updateDocSizeEstimate_(requests);
+
+    try {
+      updateSummaryTable_(docId, syncedEntries);
+    } catch (e) {}
+
+    if (CONFIG.ENABLE_NOTIFICATIONS) {
+      try {
+        sendNotification_(syncedEntries.map(e => e.name), updatedIds, errorCount, `https://docs.google.com/document/d/${docId}/edit`);
+      } catch (e) {}
+    }
+
+    const duration = Date.now() - startTime;
+    logSyncRun_({ date: new Date().toISOString(), synced: syncedEntries.length, updated: updatedIds.length, errors: errorCount, duration });
+    props.setProperty('lastSync', String(Date.now()));
+  }
+
+  return {
+    synced: syncedEntries.length,
+    updated: updatedIds.length,
+    errors: errorCount,
+    duration: Date.now() - startTime
+  };
+}
 
 // ─── MENU ─────────────────────────────────────────────────────────────────────
 
@@ -298,6 +645,7 @@ function appendMeetNotesToMaster() {
     const duration = Date.now() - startTime;
     console.timeEnd('Total Sync');
     logSyncRun_({ date: new Date().toISOString(), synced: syncedEntries.length, updated: updatedIds.length, errors: errorCount, duration });
+    props.setProperty('lastSync', String(Date.now()));
 
     const errorMsg = errorCount > 0 ? ` ⚠️ ${errorCount} error(s) — check Stackdriver logs.` : '';
     showAlert_(`✅ ${syncedEntries.length} meeting(s) added.${errorMsg}`);
@@ -314,15 +662,14 @@ function forceArchive() {
   if (ui.alert('Archive', 'Copy this document to an archive and clear the current content?', ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
   const docId = DocumentApp.getActiveDocument().getId();
   const timezone = Session.getScriptTimeZone() || 'UTC';
-  PropertiesService.getScriptProperties().setProperty('estimatedChars', String(Number.MAX_SAFE_INTEGER));
-  checkAndArchive_(docId, timezone);
+  checkAndArchive_(docId, timezone, true);
   showAlert_('✅ Archive created. The master document has been cleared.');
 }
 
 /**
  * Checks document size and archives if threshold is reached.
  */
-function checkAndArchive_(docId, timezone) {
+function checkAndArchive_(docId, timezone, force) {
   const props = PropertiesService.getScriptProperties();
   const estimatedChars = parseInt(props.getProperty('estimatedChars') || '0', 10);
   
@@ -343,7 +690,7 @@ function checkAndArchive_(docId, timezone) {
   }
 
   // 2. Check for Size Archive
-  if (!shouldArchive && CONFIG.ARCHIVE_THRESHOLD_CHARS > 0 && estimatedChars >= CONFIG.ARCHIVE_THRESHOLD_CHARS) {
+  if (!shouldArchive && CONFIG.ARCHIVE_THRESHOLD_CHARS > 0 && (force || estimatedChars >= CONFIG.ARCHIVE_THRESHOLD_CHARS)) {
     shouldArchive = true;
     archiveReason = `Size limit reached (~${estimatedChars} chars)`;
   }
@@ -357,6 +704,18 @@ function checkAndArchive_(docId, timezone) {
 
     const copy = apiCall_(() => Drive.Files.copy({ name: `Meeting Notes Archive — ${dateStr}` }, docId));
     const archiveUrl = `https://docs.google.com/document/d/${copy.id}/edit`;
+
+    // Move to configured archive folder if set
+    if (CONFIG.ARCHIVE_FOLDER_ID) {
+      try {
+        const archiveFolder = DriveApp.getFolderById(CONFIG.ARCHIVE_FOLDER_ID);
+        const archiveDoc = DriveApp.getFileById(copy.id);
+        archiveFolder.addFile(archiveDoc);
+        DriveApp.removeFile(archiveDoc);
+      } catch (e) {
+        console.error(`Failed to move archive to folder: ${e.message}`);
+      }
+    }
 
     // Mark the archive as synced locally
     props.setProperty('SYNC_' + copy.id, String(Date.now()));
