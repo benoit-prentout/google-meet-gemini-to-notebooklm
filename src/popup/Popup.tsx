@@ -69,21 +69,21 @@ export function Popup() {
 
       {/* 2×2 stat grid */}
       <div className="p-3 grid grid-cols-2 gap-1.5">
-        {STAT_CARDS.map(({ label, value, isStatus, success }) => (
+        {STAT_CARDS.map((card) => (
           <div
-            key={label}
+            key={card.label}
             className="bg-slate-50 border border-slate-200 rounded-md px-2.5 py-2 h-[52px] flex flex-col justify-between"
           >
-            <span className="text-[9px] text-slate-400 uppercase tracking-wide">{label}</span>
-            {isStatus ? (
+            <span className="text-[9px] text-slate-400 uppercase tracking-wide">{card.label}</span>
+            {'isStatus' in card && card.isStatus ? (
               <div className="flex items-center gap-1">
-                <div className={`w-1.5 h-1.5 rounded-full ${success ? 'bg-green-600' : 'bg-slate-300'}`} />
-                <span className={`text-[10px] font-semibold ${success ? 'text-green-600' : 'text-slate-500'}`}>
-                  {value}
+                <div className={`w-1.5 h-1.5 rounded-full ${'success' in card && card.success ? 'bg-green-600' : 'bg-slate-300'}`} />
+                <span className={`text-[10px] font-semibold ${'success' in card && card.success ? 'text-green-600' : 'text-slate-500'}`}>
+                  {card.value}
                 </span>
               </div>
             ) : (
-              <span className="text-xs font-semibold text-slate-900">{value}</span>
+              <span className="text-xs font-semibold text-slate-900">{card.value}</span>
             )}
           </div>
         ))}
