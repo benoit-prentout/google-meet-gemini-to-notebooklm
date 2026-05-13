@@ -11,14 +11,11 @@ export default defineConfig({
       closeBundle() {
         if (!existsSync('dist')) mkdirSync('dist', { recursive: true });
         copyFileSync('public/manifest.json', 'dist/manifest.json');
-        // Copy icons
         const iconsDir = 'dist/icons';
         if (!existsSync(iconsDir)) mkdirSync(iconsDir, { recursive: true });
         for (const size of ['16', '48', '128']) {
           const src = `public/icons/icon${size}.png`;
-          if (existsSync(src)) {
-            copyFileSync(src, `${iconsDir}/icon${size}.png`);
-          }
+          if (existsSync(src)) copyFileSync(src, `${iconsDir}/icon${size}.png`);
         }
       },
     },
@@ -26,6 +23,12 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        popup: resolve(__dirname, 'index.html'),
+        dashboard: resolve(__dirname, 'dashboard.html'),
+      },
+    },
   },
   resolve: {
     alias: {
